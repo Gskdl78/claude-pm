@@ -4,7 +4,7 @@ import { StagePanel } from './StagePanel';
 import type { ProjectInfo } from '../../../shared/types';
 
 const project: ProjectInfo = {
-  name: 'demo', path: 'C:\P\demo', initialized: true,
+  name: 'demo', path: 'C:\\P\\demo', initialized: true,
   state: {
     version: 1, name: 'demo', type: 'web', stage: 'design',
     stages: {
