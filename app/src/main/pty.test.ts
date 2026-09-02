@@ -69,6 +69,35 @@ describe('PtyManager', () => {
     expect(f.procs[1].killed).toBe(true);
     expect(() => { m.write('x'); m.resize(1, 1); }).not.toThrow();
   });
+
+  it('ignores exit events from superseded or killed processes', () => {
+    const f = fakeSpawn();
+    const m = new PtyManager(f.spawn);
+    const exit = vi.fn();
+    m.on('exit', exit);
+
+    m.start({ cwd: 'a', command: 'claude', args: [], cols: 1, rows: 1 });
+    m.start({ cwd: 'b', command: 'claude', args: [], cols: 1, rows: 1 });
+    expect(f.procs[0].killed).toBe(true);
+
+    // Stale exit from the superseded process A must be ignored.
+    f.procs[0].emitExit(1);
+    expect(exit).not.toHaveBeenCalled();
+    expect(m.isRunning()).toBe(true);
+
+    // Exit from the current, healthy process B must still be emitted.
+    f.procs[1].emitExit(0);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(m.isRunning()).toBe(false);
+
+    // After an explicit kill(), the killed process's exit must not fire 'exit'.
+    exit.mockClear();
+    m.start({ cwd: 'c', command: 'claude', args: [], cols: 1, rows: 1 });
+    m.kill();
+    f.procs[2].emitExit(0);
+    expect(exit).not.toHaveBeenCalled();
+  });
 });
 
 describe('findClaude', () => {

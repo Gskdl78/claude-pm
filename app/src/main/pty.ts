@@ -75,7 +75,8 @@ export class PtyManager extends EventEmitter {
     this.proc = proc;
     proc.onData((d) => this.emit('data', d));
     proc.onExit(({ exitCode }) => {
-      if (this.proc === proc) this.proc = null;
+      if (this.proc !== proc) return;
+      this.proc = null;
       this.emit('exit', exitCode);
     });
   }
