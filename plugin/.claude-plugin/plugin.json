@@ -1,0 +1,7 @@
+{
+  "name": "pm-workflow",
+  "description": "五階段開發流程：環境搭建 → 產品設計 → 技術設計 → 產品實現 → 人工驗證，含狀態追蹤與錯誤紀錄",
+  "version": "0.1.0",
+  "author": { "name": "claude-pm" },
+  "keywords": ["workflow", "project-management", "stages", "tdd", "review"]
+}
