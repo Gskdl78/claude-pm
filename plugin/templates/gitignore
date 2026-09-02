@@ -1,0 +1,8 @@
+# claude-pm 基本規則；依語言於 /stage-env 補充
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+.pm/state.json.tmp
