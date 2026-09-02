@@ -26,6 +26,26 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 ```
 改 `root` 可換專案根目錄。
 
+## 終端機快捷鍵
+
+內嵌終端機沿用 Windows Terminal 的複製貼上習慣（選單列預設隱藏，但快捷鍵一律有效）：
+
+| 按鍵 | 行為 |
+| --- | --- |
+| `Ctrl+Shift+C` / `Ctrl+Insert` | 複製目前選取的文字 |
+| `Ctrl+C` | 有選取時複製；沒有選取時照常送出 `^C` 中斷 Claude Code |
+| `Ctrl+Shift+V` / `Shift+Insert` / `Ctrl+V` | 把剪貼簿內容貼進 pty（多行原樣送出） |
+| 右鍵 | 有選取時複製，沒有選取時貼上 |
+
+滑鼠拖曳選取文字的行為不變。剪貼簿走 renderer 的 `navigator.clipboard`：
+Electron 44 的 sandbox renderer 在 `file://` 頁面上已預設授予 `clipboard-read`／`clipboard-write`，
+不會跳權限提示，因此不需要額外的 IPC 通道。
+
+應用程式選單（`src/main/menu.ts`）另外註冊了「編輯」（copy／paste／selectAll）與
+「檢視」（reload／toggleDevTools／resetZoom／zoomIn／zoomOut）的標準 role，
+讓這些加速鍵在 `autoHideMenuBar: true` 的情況下依然存在。終端機自己的按鍵處理會先
+`preventDefault()`，所以不會和選單的 role 重複觸發（不會貼上兩次）。
+
 ## 環境注意事項
 
 ### 原生模組（node-pty）不需要 C++ 工具鏈
