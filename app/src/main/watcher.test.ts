@@ -38,6 +38,25 @@ describe('ProjectWatcher', () => {
     }
   });
 
+  it('emits git when the index changes or a branch ref is created', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pm-watch-'));
+    mkdirSync(join(dir, '.git', 'refs', 'heads'), { recursive: true });
+    const w = new ProjectWatcher(dir, 30);
+    w.start();
+    try {
+      const p1 = once(w, 'git');
+      writeFileSync(join(dir, '.git', 'index'), 'DIRC');
+      await p1;
+
+      await wait(50);
+      const p2 = once(w, 'git');
+      writeFileSync(join(dir, '.git', 'refs', 'heads', 'dev'), 'abc');
+      await p2;
+    } finally {
+      w.stop();
+    }
+  });
+
   it('does not emit after stop', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pm-watch-'));
     mkdirSync(join(dir, '.pm'));
