@@ -82,6 +82,8 @@ describe('ipc handlers', () => {
     await expect(h['git:log'](outside)).rejects.toThrow(/path outside root/);
     await expect(h['shell:openPath'](join(outside, 'a.md'))).rejects.toThrow(/path outside root/);
     await expect(h['pty:start'](outside, { continue: false, cols: 1, rows: 1 })).rejects.toThrow(/path outside root/);
+    await expect(h['git:status'](outside)).rejects.toThrow(/path outside root/);
+    await expect(h['git:run'](outside, { kind: 'fetch' })).rejects.toThrow(/path outside root/);
   });
 
   it('accepts only slash-command initialPrompts', async () => {
