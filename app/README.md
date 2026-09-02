@@ -22,7 +22,7 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 
 `%USERPROFILE%\.claude-pm\config.json`：
 ```json
-{ "root": "C:\Projects", "lastProject": "C:\Projects\my-app", "recent": [] }
+{ "root": "C:\\Projects", "lastProject": "C:\\Projects\\my-app", "recent": [] }
 ```
 改 `root` 可換專案根目錄。
 
