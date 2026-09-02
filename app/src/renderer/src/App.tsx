@@ -19,6 +19,7 @@ export default function App() {
   const [current, setCurrent] = useState<ProjectInfo | null>(null);
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle');
+  const [launchSeq, setLaunchSeq] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogBusy, setDialogBusy] = useState(false);
@@ -44,13 +45,22 @@ export default function App() {
     const envPending = !p.state || p.state.stages.env.status === 'pending';
     const usedContinue = allowContinue && !envPending;
     launchRef.current = { at: Date.now(), usedContinue };
-    await pm.pty.start(p.path, {
-      continue: usedContinue,
-      initialPrompt: !usedContinue && envPending && p.initialized ? '/stage-env' : undefined,
-      cols: 120,
-      rows: 30,
-    });
+    try {
+      await pm.pty.start(p.path, {
+        continue: usedContinue,
+        initialPrompt: !usedContinue && envPending && p.initialized ? '/stage-env' : undefined,
+        cols: 120,
+        rows: 30,
+      });
+    } catch (e) {
+      setPtyStatus('exited');
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     setPtyStatus('running');
+    // Every launch gets a new pty at the fixed 120x30 above; bumping the seq
+    // makes Terminal re-fit and resize it to the real viewport each time.
+    setLaunchSeq((n) => n + 1);
   }, []);
 
   const openProject = useCallback(async (p: ProjectInfo) => {
@@ -58,6 +68,8 @@ export default function App() {
     setCurrentProject(p);
     try {
       const info = await pm.openProject(p.path);
+      // A newer open won while we were awaiting — drop this one entirely.
+      if (currentRef.current?.path !== p.path) return;
       // Keep whatever a state-changed event delivered while we were opening.
       if (currentRef.current === p) setCurrentProject(info);
       setCommits(await pm.getGitLog(p.path, 30));
@@ -157,7 +169,7 @@ export default function App() {
         {error && <div className="error">{error}</div>}
         <StagePanel project={current} onRebuild={handleRebuild} onOpenDoc={handleOpenDoc} />
       </header>
-      <Terminal status={ptyStatus} onRestart={() => { if (current) void launch(current, true); }} />
+      <Terminal status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }} />
       <aside className="git">
         <GitLog commits={commits} />
       </aside>

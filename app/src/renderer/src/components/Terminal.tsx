@@ -6,10 +6,12 @@ import { pm } from '../api';
 
 interface Props {
   status: 'idle' | 'running' | 'exited';
+  /** Bumped by App on every successful pty start, so each new pty gets re-fitted. */
+  launchSeq: number;
   onRestart: () => void;
 }
 
-export function Terminal({ status, onRestart }: Props) {
+export function Terminal({ status, launchSeq, onRestart }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -54,7 +56,7 @@ export function Terminal({ status, onRestart }: Props) {
       pm.pty.resize(termRef.current.cols, termRef.current.rows);
       termRef.current.focus();
     }
-  }, [status]);
+  }, [status, launchSeq]);
 
   return (
     <div className="term">

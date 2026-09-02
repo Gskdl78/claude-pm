@@ -94,6 +94,35 @@ describe('App', () => {
     await waitFor(() => expect(api.openProject).toHaveBeenCalledWith('C:\\P\\gamma'));
   });
 
+  it('ignores a superseded openProject when another project is opened first', async () => {
+    let resolveAlpha!: (info: ProjectInfo) => void;
+    const alphaPending = new Promise<ProjectInfo>((resolve) => { resolveAlpha = resolve; });
+    const api = mockApi({
+      listProjects: vi.fn(async () => [project('alpha'), project('beta', 'done')]),
+      openProject: vi.fn((path: string) =>
+        (path.endsWith('alpha') ? alphaPending : Promise.resolve(project('beta', 'done')))),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.openProject).toHaveBeenCalledWith('C:\\P\\alpha'));
+    fireEvent.click(screen.getByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    await act(async () => { resolveAlpha(project('alpha')); });
+    expect(api.pty.start).toHaveBeenCalledTimes(1);
+    expect(api.pty.start).not.toHaveBeenCalledWith('C:\\P\\alpha', expect.anything());
+    expect(api.getGitLog).not.toHaveBeenCalledWith('C:\\P\\alpha', 30);
+    expect(screen.getByText(/^beta ·/)).toBeInTheDocument();
+  });
+
+  it('surfaces a pty spawn failure', async () => {
+    const api = mockApi();
+    api.pty.start = vi.fn(async () => { throw new Error('spawn ENOENT'); });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'exited'));
+    expect(screen.getByText('spawn ENOENT')).toBeInTheDocument();
+  });
+
   it('updates the stage panel when state changes arrive', async () => {
     const listeners: Listeners = { state: [], exit: [] };
     const api = mockApi({}, listeners);
