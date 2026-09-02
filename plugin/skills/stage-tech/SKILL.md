@@ -9,6 +9,7 @@ description: 階段 3 技術設計。做架構分析（預期使用人數、架�
 1. 執行 `node .pm/pm-state.mjs get`。
    - `stages.design.status` 不是 `done`：請使用者先執行 `/stage-design`，停止。
    - `stages.tech.status` 是 `done`：告知已完成，建議 `/stage-build`，停止。
+   - `stages.tech.status` 是 `blocked`：說明 `reason`，詢問使用者如何處理，同意後才繼續。
 2. 執行 `node .pm/pm-state.mjs start tech`。
 3. 讀 `docs/product/prd.md` 與 CLAUDE.md。
 

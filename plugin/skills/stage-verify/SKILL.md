@@ -9,6 +9,7 @@ description: 階段 5 人工驗證。產出人工測試清單，接收使用者�
 1. 執行 `node .pm/pm-state.mjs get`。
    - `stages.build.status` 不是 `done`：請使用者先執行 `/stage-build`，停止。
    - `stages.verify.status` 是 `done`：告知專案已完成，停止。
+   - `stages.verify.status` 是 `blocked`：說明 `reason`，詢問使用者如何處理，同意後才繼續。
 2. 若 `stages.verify.status` 是 `pending`，或是 `blocked` 且使用者已同意繼續，執行 `node .pm/pm-state.mjs start verify`（此舉會清除 blocked 標記並設回 in_progress）。
 3. 讀 CLAUDE.md、`docs/product/prd.md`、`docs/tech/tasks.md`。取專案絕對路徑：`pwd`。
 
@@ -56,7 +57,16 @@ git commit -m "docs(verify): 產出驗證清單"
    請執行 `git diff`、跑完整測試、確認新增的測試確實重現原問題（把修正暫時還原應該會失敗）、確認沒有引入無關變更。
    回覆第一行必須是 `VERDICT: PASS` 或 `VERDICT: FAIL`，之後條列具體問題（檔案:行號、原因、修法）。
    ```
-4. FAIL：把審核問題交回修正 subagent 再修，回到步驟 3。同一問題退回 3 次仍 FAIL：`node .pm/pm-state.mjs block verify --reason "issue <id> 修正 3 次未過"`，詢問使用者，停止。
+4. **若 FAIL**：每一次退回都要記錄，不可只記最後一次。
+   a. 在 `docs/build/log.md` 追加：
+      ```
+      ## 驗證修正 issue <id> 退回 #<第幾次>
+      - 症狀：<審核者指出的症狀>
+      - 根因：<審核者指出的根因>
+      - 修法：<審核者建議的修法>
+      ```
+   b. 把審核者的問題全文交回修正 subagent 再修，回到步驟 3。
+   c. 第 3 次 FAIL 時不再派修正：記錄完退回後執行 `node .pm/pm-state.mjs block verify --reason "issue <id> 修正 3 次未過"`，用 AskUserQuestion 詢問使用者如何處理，然後停止。
 5. PASS：
    ```bash
    git add -A
@@ -79,3 +89,4 @@ git rev-parse --short HEAD
 ## 規則
 - 主 session 不自己改程式碼。
 - 每個問題修正都要獨立 commit 並記錄 issue。
+- 把審核者或使用者的文字帶進 `--symptom` / `--cause` / `--fix` / `--reason` 或 `git commit -m` 之前，先移除或替換反引號、`$`、雙引號（例如把 `"` 換成 `'`），並把每個值壓成一行；Git Bash 會在雙引號內展開這些字元。

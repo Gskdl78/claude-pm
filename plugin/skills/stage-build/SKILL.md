@@ -55,17 +55,24 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
       ```
    c. 派實作 subagent（同 model）修正，prompt 為步驟 2 的內容再加上「審核者指出以下問題，請逐項修正並回報：<審核全文>」。
    d. 回到步驟 3。
-   e. 同一任務退回達 3 次仍 FAIL：執行 `node .pm/pm-state.mjs block build --reason "T<n> 審核 3 次未過"`，tasks.md 該任務改「狀態: blocked」，用 AskUserQuestion 詢問使用者（放寬驗收 / 拆任務 / 手動處理），然後停止。
+   e. 第 3 次 FAIL 時不再派修正：記錄 issue 後執行 `node .pm/pm-state.mjs block build --reason "T<n> 審核 3 次未過"`，tasks.md 該任務改「狀態: blocked」，用 AskUserQuestion 詢問使用者（放寬驗收 / 拆任務 / 手動處理），然後停止。也就是同一任務最多派 3 次實作（1 次初版 + 2 次修正），絕不派第 4 次。
 5. **若 PASS**：
    a. tasks.md 該任務改「狀態: done」。
-   b. Commit，前綴規則：新功能 `feat:`、修錯 `fix:`、只有測試 `test:`、[security] 任務 `fix(security):`。若此任務有退回紀錄，第二段加 `Fixes: <症狀>`：
+   b. 先寫紀錄再 commit：`docs/build/log.md` 追加 `## T<n> 完成` 與一行審核摘要（此時還沒有 sha，對應的 commit 由步驟 d 的 issue 紀錄；沒有退回紀錄的任務就只留這一行）。
+   c. Commit，前綴規則：新功能 `feat:`、修錯 `fix:`、只有測試 `test:`、[security] 任務 `fix(security):`。因為 log.md 與 tasks.md 已在 b、a 更新，這個 commit 即包含該任務的全部變更，自成一體。
+      此任務**有**退回紀錄時，第二段加 `Fixes: <症狀>`：
       ```bash
       git add -A
       git commit -m "<prefix> T<n> <標題>" -m "Fixes: <症狀>"
       git rev-parse --short HEAD
       ```
-   c. 有退回紀錄的 issue 補上 commit：`node .pm/pm-state.mjs update-issue <id> --commit <sha>`。
-   d. `docs/build/log.md` 追加 `## T<n> 完成 — <sha>` 與一行審核摘要。
+      此任務**沒有**退回紀錄時，省略第二個 `-m`：
+      ```bash
+      git add -A
+      git commit -m "<prefix> T<n> <標題>"
+      git rev-parse --short HEAD
+      ```
+   d. 有退回紀錄的 issue 補上 commit：`node .pm/pm-state.mjs update-issue <id> --commit <sha>`。
 6. 進入下一個任務。
 
 ## 收尾
@@ -78,3 +85,6 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
 - 主 session 不自己寫程式碼，一律派 subagent。
 - 每個任務結束都必須有自己的 commit，不可合併多個任務。
 - 被中斷後重新執行本 skill 時，從 tasks.md 第一個非 done 的任務繼續；若該任務是 in_progress，先跑 `git status` 看有無殘留變更，交給審核 subagent 判斷可否沿用。
+- 若該任務在 tasks.md 是「狀態: blocked」，在使用者決定處理方式並同意繼續後：把它改回「狀態: in_progress」，該任務的退回次數計數器歸零（重新從第 1 次算起），並和 in_progress 一樣先跑 `git status`，把殘留變更交給審核 subagent 判斷可否沿用。
+- 若使用者選擇「手動處理」，該任務由使用者自行 commit 並在 tasks.md 標記「狀態: done」；本 skill 不再派 subagent，直接從下一個任務繼續。
+- 把審核者或使用者的文字帶進 `--symptom` / `--cause` / `--fix` / `--reason` 或 `git commit -m` 之前，先移除或替換反引號、`$`、雙引號（例如把 `"` 換成 `'`），並把每個值壓成一行；Git Bash 會在雙引號內展開這些字元。
