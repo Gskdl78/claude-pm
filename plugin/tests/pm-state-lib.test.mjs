@@ -8,6 +8,9 @@ import {
 import {
   prevStage, nextStage, startStage, finishStage, blockStage, addDoc, addIssue, updateIssue,
 } from '../scripts/pm-state-lib.mjs';
+import {
+  collectHistory, summarizeHistory, rebuildState,
+} from '../scripts/pm-state-lib.mjs';
 
 describe('initialState', () => {
   it('has all stages pending and stage=env', () => {
@@ -154,5 +157,80 @@ describe('issues', () => {
     const s2 = updateIssue(state, 1, { cause: 'c', fix: 'f', commit: 'deadbee' });
     expect(s2.issues[0]).toMatchObject({ cause: 'c', fix: 'f', commit: 'deadbee', symptom: 's' });
     expect(() => updateIssue(s2, 99, { fix: 'x' })).toThrow(/issue 99 not found/);
+  });
+});
+
+describe('history', () => {
+  it('collects issues from sibling projects and skips corrupt/excluded', () => {
+    const root = makeTempDir();
+    const a = join(root, 'a'); const b = join(root, 'b'); const c = join(root, 'c'); const me = join(root, 'me');
+    let sa = initialState('a');
+    sa = addIssue(sa, { stage: 'build', symptom: 'DB 連線逾時', cause: '沒有設定連線池', fix: '加 pool' }).state;
+    writeState(a, sa);
+    let sb = initialState('b');
+    sb = addIssue(sb, { stage: 'verify', symptom: 'timeout', cause: '沒有設定連線池', fix: '設定 max=10' }).state;
+    writeState(b, sb);
+    mkdirSync(join(c, '.pm'), { recursive: true });
+    writeFileSync(statePath(c), 'garbage');
+    let sm = initialState('me');
+    sm = addIssue(sm, { stage: 'build', symptom: 'should be excluded' }).state;
+    writeState(me, sm);
+
+    const issues = collectHistory(root, { exclude: me });
+    expect(issues.map((i) => i.project).sort()).toEqual(['a', 'b']);
+
+    const summary = summarizeHistory(issues);
+    expect(summary).toHaveLength(1);
+    expect(summary[0]).toEqual({
+      cause: '沒有設定連線池', count: 2, projects: ['a', 'b'], fixes: ['加 pool', '設定 max=10'],
+    });
+  });
+
+  it('summarize falls back to symptom when cause is empty', () => {
+    const summary = summarizeHistory([
+      { project: 'p', symptom: 'Crash', cause: '' },
+      { project: 'q', symptom: 'crash', cause: '' },
+    ]);
+    expect(summary[0].count).toBe(2);
+  });
+});
+
+describe('rebuildState', () => {
+  const files = (list) => (p) => list.includes(p);
+
+  it('empty project stays at env pending', () => {
+    const s = rebuildState('x', { exists: files([]), commits: [] });
+    expect(s.stage).toBe('env');
+    expect(s.stages.env.status).toBe('pending');
+  });
+
+  it('env done, design in progress when prd exists without commit', () => {
+    const s = rebuildState('x', {
+      exists: files(['CLAUDE.md', 'docs/product/prd.md']),
+      commits: ['chore(env): 環境搭建完成'],
+    });
+    expect(s.stages.env.status).toBe('done');
+    expect(s.stages.design.status).toBe('in_progress');
+    expect(s.stages.tech.status).toBe('pending');
+    expect(s.stage).toBe('design');
+  });
+
+  it('through build done and verify in progress', () => {
+    const s = rebuildState('x', {
+      exists: files(['CLAUDE.md', 'docs/product/prd.md', 'docs/tech/tasks.md', 'docs/build/log.md', 'docs/verify/checklist.md']),
+      commits: ['docs(verify): 產出驗證清單', 'feat: T1', 'docs(tech): 技術設計完成', 'docs(design): 產品設計完成', 'chore(env): x'],
+    });
+    expect(s.stages.build.status).toBe('done');
+    expect(s.stages.verify.status).toBe('in_progress');
+    expect(s.stage).toBe('verify');
+  });
+
+  it('records the newest matching commit hash when given "hash subject" lines', () => {
+    const s = rebuildState('x', {
+      exists: files(['CLAUDE.md']),
+      commits: ['a1b2c3d chore(env): 環境搭建完成'],
+    });
+    expect(s.stages.env.status).toBe('done');
+    expect(s.stages.env.commit).toBe('a1b2c3d');
   });
 });

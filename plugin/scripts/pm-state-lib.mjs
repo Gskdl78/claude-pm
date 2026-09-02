@@ -142,3 +142,84 @@ export function updateIssue(state, id, patch) {
   }
   return state;
 }
+
+export function collectHistory(rootDir, { exclude } = {}) {
+  const out = [];
+  if (!existsSync(rootDir)) return out;
+  for (const d of readdirSync(rootDir, { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    const dir = join(rootDir, d.name);
+    if (exclude && resolve(dir) === resolve(exclude)) continue;
+    const p = statePath(dir);
+    if (!existsSync(p)) continue;
+    try {
+      const s = JSON.parse(readFileSync(p, 'utf8'));
+      for (const i of s.issues ?? []) out.push({ project: s.name ?? d.name, ...i });
+    } catch {
+      // 損毀的 state 直接跳過
+    }
+  }
+  return out;
+}
+
+export function summarizeHistory(issues) {
+  const groups = new Map();
+  for (const i of issues) {
+    const label = (i.cause || i.symptom || '').trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    const g = groups.get(key) ?? { cause: label, count: 0, projects: [], fixes: [] };
+    g.count += 1;
+    if (!g.projects.includes(i.project)) g.projects.push(i.project);
+    if (i.fix && !g.fixes.includes(i.fix)) g.fixes.push(i.fix);
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+
+// commits: 由新到舊的 subject 字串，可選帶 "hash " 前綴（`git log --format=%h %s`）。
+function findCommit(commits, prefix) {
+  for (const line of commits) {
+    const m = /^([0-9a-f]{7,40})\s+(.*)$/.exec(line);
+    const hash = m ? m[1] : '';
+    const subject = m ? m[2] : line;
+    if (subject.startsWith(prefix)) return { hash, subject };
+  }
+  return null;
+}
+
+const REBUILD_RULES = {
+  env: { doc: 'CLAUDE.md', commitPrefix: 'chore(env)' },
+  design: { doc: 'docs/product/prd.md', commitPrefix: 'docs(design)' },
+  tech: { doc: 'docs/tech/tasks.md', commitPrefix: 'docs(tech)' },
+  build: { doc: 'docs/build/log.md', nextDoc: 'docs/verify/checklist.md' },
+  verify: { doc: 'docs/verify/checklist.md', neverDone: true },
+};
+
+export function rebuildState(name, { exists, commits }) {
+  const s = initialState(name);
+  let current = null;
+  for (const st of STAGES) {
+    const rule = REBUILD_RULES[st];
+    if (current) { s.stages[st] = { status: 'pending' }; continue; }
+    let done = false;
+    let commit = '';
+    if (rule.neverDone) {
+      done = false;
+    } else if (rule.commitPrefix) {
+      const c = findCommit(commits, rule.commitPrefix);
+      done = exists(rule.doc) && !!c;
+      commit = c?.hash ?? '';
+    } else {
+      done = exists(rule.doc) && exists(rule.nextDoc);
+    }
+    if (done) {
+      s.stages[st] = { status: 'done', ...(commit ? { commit } : {}) };
+    } else {
+      s.stages[st] = { status: exists(rule.doc) ? 'in_progress' : 'pending' };
+      current = st;
+    }
+  }
+  s.stage = current ?? 'done';
+  return s;
+}
