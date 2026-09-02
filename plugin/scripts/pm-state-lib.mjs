@@ -59,3 +59,86 @@ export function writeState(projectDir, state) {
   writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n');
   renameSync(tmp, p);
 }
+
+function assertStage(stage) {
+  if (!STAGES.includes(stage)) throw new Error(`unknown stage: ${stage}`);
+}
+
+export function prevStage(stage) {
+  assertStage(stage);
+  const i = STAGES.indexOf(stage);
+  return i > 0 ? STAGES[i - 1] : null;
+}
+
+export function nextStage(stage) {
+  assertStage(stage);
+  const i = STAGES.indexOf(stage);
+  return i < STAGES.length - 1 ? STAGES[i + 1] : 'done';
+}
+
+export function startStage(state, stage, now = new Date()) {
+  assertStage(stage);
+  const prev = prevStage(stage);
+  if (prev && state.stages[prev].status !== 'done') {
+    throw new Error(`cannot start ${stage}: ${prev} is ${state.stages[prev].status}`);
+  }
+  state.stages[stage] = { ...state.stages[stage], status: 'in_progress', startedAt: now.toISOString() };
+  delete state.stages[stage].reason;
+  state.stage = stage;
+  return state;
+}
+
+export function finishStage(state, stage, { commit, now = new Date() } = {}) {
+  assertStage(stage);
+  const cur = state.stages[stage].status;
+  if (cur !== 'in_progress') throw new Error(`cannot finish ${stage}: status is ${cur}`);
+  state.stages[stage] = {
+    ...state.stages[stage],
+    status: 'done',
+    at: now.toISOString(),
+    ...(commit ? { commit } : {}),
+  };
+  state.stage = nextStage(stage);
+  return state;
+}
+
+export function blockStage(state, stage, reason) {
+  assertStage(stage);
+  state.stages[stage] = { ...state.stages[stage], status: 'blocked', reason: reason || '' };
+  return state;
+}
+
+export function addDoc(state, stage, path) {
+  assertStage(stage);
+  const docs = state.stages[stage].docs ?? [];
+  if (!docs.includes(path)) docs.push(path);
+  state.stages[stage].docs = docs;
+  return state;
+}
+
+export function addIssue(state, issue, now = new Date()) {
+  if (!STAGES.includes(issue.stage)) throw new Error(`issue.stage must be one of ${STAGES.join('|')}`);
+  if (!issue.symptom || !issue.symptom.trim()) throw new Error('issue.symptom is required');
+  const last = state.issues.length ? state.issues[state.issues.length - 1].id : 0;
+  const entry = {
+    id: last + 1,
+    stage: issue.stage,
+    task: issue.task ?? null,
+    symptom: issue.symptom.trim(),
+    cause: issue.cause ?? '',
+    fix: issue.fix ?? '',
+    commit: issue.commit ?? '',
+    at: now.toISOString(),
+  };
+  state.issues.push(entry);
+  return { state, issue: entry };
+}
+
+export function updateIssue(state, id, patch) {
+  const entry = state.issues.find((i) => i.id === Number(id));
+  if (!entry) throw new Error(`issue ${id} not found`);
+  for (const k of ['cause', 'fix', 'commit']) {
+    if (patch[k] !== undefined) entry[k] = patch[k];
+  }
+  return state;
+}
