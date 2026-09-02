@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import type { PmApi, ProjectInfo } from '../../shared/types';
+import type { GitCommit, PmApi, ProjectInfo } from '../../shared/types';
 
 vi.mock('./components/Terminal', () => ({
   Terminal: ({ status, onRestart }: { status: string; onRestart: () => void }) => (
@@ -112,6 +112,95 @@ describe('App', () => {
     expect(api.pty.start).not.toHaveBeenCalledWith('C:\\P\\alpha', expect.anything());
     expect(api.getGitLog).not.toHaveBeenCalledWith('C:\\P\\alpha', 30);
     expect(screen.getByText(/^beta ·/)).toBeInTheDocument();
+  });
+
+  it('falls back once without --continue when a continue launch fails late', async () => {
+    const listeners: Listeners = { state: [], exit: [] };
+    const api = mockApi({
+      getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
+      listProjects: vi.fn(async () => [project('beta', 'done')]),
+      openProject: vi.fn(async () => project('beta', 'done')),
+    }, listeners);
+    await renderApp(api);
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.objectContaining({ continue: true })));
+
+    // Well past the old 5s fallback window: the fallback must still happen.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+    await act(async () => { listeners.exit.forEach((cb) => cb(1)); });
+    now.mockRestore();
+    await waitFor(() => expect(api.pty.start).toHaveBeenLastCalledWith('C:\\P\\beta', expect.objectContaining({ continue: false })));
+    expect(api.pty.start).toHaveBeenCalledTimes(2);
+
+    // The fallback launch failing must not start yet another --continue launch.
+    await act(async () => { listeners.exit.forEach((cb) => cb(1)); });
+    expect(api.pty.start).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'exited');
+
+    // A manual restart may use --continue again: a fresh session can now exist.
+    fireEvent.click(screen.getByText('重新啟動'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenLastCalledWith('C:\\P\\beta', expect.objectContaining({ continue: true })));
+  });
+
+  it('drops a superseded open whose git log resolves last', async () => {
+    let resolveLog!: (c: GitCommit[]) => void;
+    const alphaLog = new Promise<GitCommit[]>((resolve) => { resolveLog = resolve; });
+    const api = mockApi({
+      listProjects: vi.fn(async () => [project('alpha'), project('beta', 'done')]),
+      getGitLog: vi.fn((path: string) => (path.endsWith('alpha') ? alphaLog : Promise.resolve([]))),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.getGitLog).toHaveBeenCalledWith('C:\\P\\alpha', 30));
+    fireEvent.click(screen.getByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    await act(async () => { resolveLog([]); });
+    expect(api.pty.start).toHaveBeenCalledTimes(1);
+    expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything());
+  });
+
+  it('reverts to the previous project when an open fails', async () => {
+    const api = mockApi({
+      listProjects: vi.fn(async () => [project('alpha'), project('beta', 'done')]),
+      openProject: vi.fn((path: string) =>
+        (path.endsWith('beta') ? Promise.reject(new Error('boom')) : Promise.resolve(project('alpha')))),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.anything()));
+    fireEvent.click(screen.getByText('beta'));
+    expect(await screen.findByText('boom')).toBeInTheDocument();
+    expect(screen.getByText(/^alpha ·/)).toBeInTheDocument();
+  });
+
+  it('stays quiet when a superseded open rejects', async () => {
+    let rejectAlpha!: (e: Error) => void;
+    const alphaOpen = new Promise<ProjectInfo>((_, reject) => { rejectAlpha = reject; });
+    const api = mockApi({
+      listProjects: vi.fn(async () => [project('alpha'), project('beta', 'done')]),
+      openProject: vi.fn((path: string) =>
+        (path.endsWith('alpha') ? alphaOpen : Promise.resolve(project('beta', 'done')))),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.openProject).toHaveBeenCalledWith('C:\\P\\alpha'));
+    fireEvent.click(screen.getByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    await act(async () => { rejectAlpha(new Error('late alpha failure')); });
+    expect(screen.queryByText('late alpha failure')).not.toBeInTheDocument();
+    expect(screen.getByText(/^beta ·/)).toBeInTheDocument();
+  });
+
+  it('strips the electron remote-method prefix from error text', async () => {
+    const api = mockApi({
+      createProject: vi.fn(async () => {
+        throw new Error("Error invoking remote method 'projects:create': Error: 名稱已存在");
+      }),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '+ 新專案' }));
+    fireEvent.change(screen.getByLabelText('專案名稱'), { target: { value: 'gamma' } });
+    fireEvent.click(screen.getByRole('button', { name: '建立' }));
+    expect(await screen.findByText('名稱已存在')).toBeInTheDocument();
   });
 
   it('surfaces a pty spawn failure', async () => {

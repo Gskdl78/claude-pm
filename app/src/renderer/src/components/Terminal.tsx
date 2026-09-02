@@ -50,11 +50,21 @@ export function Terminal({ status, launchSeq, onRestart }: Props) {
     };
   }, []);
 
+  const seenSeq = useRef(launchSeq);
+
   useEffect(() => {
-    if (status === 'running' && termRef.current && fitRef.current) {
+    const term = termRef.current;
+    if (!term) return;
+    // A new pty is a new session: without this its output would be appended
+    // under the previous project's scrollback.
+    if (seenSeq.current !== launchSeq) {
+      seenSeq.current = launchSeq;
+      term.reset();
+    }
+    if (status === 'running' && fitRef.current) {
       fitRef.current.fit();
-      pm.pty.resize(termRef.current.cols, termRef.current.rows);
-      termRef.current.focus();
+      pm.pty.resize(term.cols, term.rows);
+      term.focus();
     }
   }, [status, launchSeq]);
 

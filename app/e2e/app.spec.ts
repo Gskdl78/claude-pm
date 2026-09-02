@@ -1,10 +1,19 @@
 import { test, expect, _electron as electron } from '@playwright/test';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+/** Tracked so afterAll can delete it even when the test fails midway. */
+let fakeHome: string | null = null;
+
+test.afterAll(() => {
+  // Best effort: a lingering claude/pty handle can still hold a file open.
+  if (fakeHome) try { rmSync(fakeHome, { recursive: true, force: true }); } catch { /* leave it to the OS */ }
+});
+
 function makeHome() {
   const home = mkdtempSync(join(tmpdir(), 'pm-e2e-'));
+  fakeHome = home;
   const root = join(home, 'Projects');
   mkdirSync(root);
   mkdirSync(join(home, '.claude-pm'));

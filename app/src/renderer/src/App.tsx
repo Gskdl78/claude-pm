@@ -10,7 +10,14 @@ import { ClaudeMissing } from './components/ClaudeMissing';
 
 type Screen = 'loading' | 'claude-missing' | 'main';
 type PtyStatus = 'idle' | 'running' | 'exited';
-const CONTINUE_FALLBACK_MS = 5000;
+
+// ipcRenderer.invoke wraps every main-process failure in its own preamble;
+// only the tail carries something a user can act on.
+const REMOTE_METHOD_PREFIX = /^Error invoking remote method '[^']*': (?:Error: )?/;
+
+export function errorMessage(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).replace(REMOTE_METHOD_PREFIX, '');
+}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -26,7 +33,7 @@ export default function App() {
   const [dialogError, setDialogError] = useState<string | null>(null);
 
   const currentRef = useRef<ProjectInfo | null>(null);
-  const launchRef = useRef<{ at: number; usedContinue: boolean } | null>(null);
+  const launchRef = useRef<{ usedContinue: boolean } | null>(null);
 
   // currentRef must move in the same tick as the state, otherwise events that
   // arrive while openProject is awaiting are matched against a stale path.
@@ -44,7 +51,7 @@ export default function App() {
   const launch = useCallback(async (p: ProjectInfo, allowContinue: boolean) => {
     const envPending = !p.state || p.state.stages.env.status === 'pending';
     const usedContinue = allowContinue && !envPending;
-    launchRef.current = { at: Date.now(), usedContinue };
+    launchRef.current = { usedContinue };
     try {
       await pm.pty.start(p.path, {
         continue: usedContinue,
@@ -54,7 +61,7 @@ export default function App() {
       });
     } catch (e) {
       setPtyStatus('exited');
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       return;
     }
     setPtyStatus('running');
@@ -65,6 +72,7 @@ export default function App() {
 
   const openProject = useCallback(async (p: ProjectInfo) => {
     setError(null);
+    const prev = currentRef.current;
     setCurrentProject(p);
     try {
       const info = await pm.openProject(p.path);
@@ -72,10 +80,16 @@ export default function App() {
       if (currentRef.current?.path !== p.path) return;
       // Keep whatever a state-changed event delivered while we were opening.
       if (currentRef.current === p) setCurrentProject(info);
-      setCommits(await pm.getGitLog(p.path, 30));
-      await launch(currentRef.current ?? info, true);
+      const log = await pm.getGitLog(p.path, 30);
+      // The git log is another await, and another chance to be superseded.
+      if (currentRef.current?.path !== p.path) return;
+      setCommits(log);
+      await launch(info, true);
     } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
+      // A superseded open must not clobber the winner's project or banner.
+      if (currentRef.current?.path !== p.path) return;
+      setCurrentProject(prev);
+      setError(errorMessage(e));
     }
   }, [launch, setCurrentProject]);
 
@@ -107,7 +121,9 @@ export default function App() {
     const offExit = pm.pty.onExit((code) => {
       const l = launchRef.current;
       const cur = currentRef.current;
-      if (l && cur && l.usedContinue && code !== 0 && Date.now() - l.at < CONTINUE_FALLBACK_MS) {
+      // A --continue launch that fails always gets exactly one retry without
+      // it: the retry has usedContinue=false, so this cannot loop.
+      if (l && cur && l.usedContinue && code !== 0) {
         void launch(cur, false);
         return;
       }
@@ -124,7 +140,7 @@ export default function App() {
       setDialogOpen(false);
       await openProject(created);
     } catch (e) {
-      setDialogError(e instanceof Error ? e.message : String(e));
+      setDialogError(errorMessage(e));
     } finally {
       setDialogBusy(false);
     }
@@ -137,7 +153,7 @@ export default function App() {
       await refreshProjects();
       await openProject(info);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   };
 
@@ -148,7 +164,7 @@ export default function App() {
       setCurrentProject(info);
       await refreshProjects();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   };
 
