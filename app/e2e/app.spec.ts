@@ -36,7 +36,7 @@ test('creates a project, shows stage panel, and restores it after relaunch', asy
     await page.getByLabel('專案名稱').fill('e2e-demo');
     await page.getByRole('button', { name: '建立' }).click();
 
-    await expect(page.getByText('環境搭建')).toBeVisible();
+    await expect(page.locator('.stage').getByText('環境搭建')).toBeVisible();
     await expect(page.locator('.xterm')).toBeVisible();
   } finally {
     // Always close: the opened project auto-starts a real claude pty.
