@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
 import { registerIpc } from './ipc';
+import { installAppMenu } from './menu';
 import { PtyManager } from './pty';
 import { getPluginDir } from './plugin-dir';
 
@@ -34,6 +35,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  installAppMenu();
   const win = createWindow();
   const pty = new PtyManager();
   registerIpc({ win, pty, pluginDir: getPluginDir() });

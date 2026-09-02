@@ -11,6 +11,28 @@ interface Props {
   onRestart: () => void;
 }
 
+/**
+ * Electron 44's sandboxed renderer grants `clipboard-read`/`clipboard-write`
+ * without a prompt on the bundled file:// page, so the standard async
+ * clipboard API is enough — no IPC round trip to the main process is needed.
+ */
+async function copyToClipboard(text: string): Promise<void> {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Clipboard busy or denied: dropping the copy is better than crashing input.
+  }
+}
+
+async function readClipboard(): Promise<string> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return '';
+  }
+}
+
 export function Terminal({ status, launchSeq, onRestart }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -32,6 +54,50 @@ export function Terminal({ status, launchSeq, onRestart }: Props) {
     termRef.current = term;
     fitRef.current = fit;
 
+    const selection = () => term.getSelection?.() ?? '';
+    const copySelection = () => {
+      const text = selection();
+      if (!text) return;
+      void copyToClipboard(text);
+      term.clearSelection?.();
+    };
+    const paste = () => {
+      void readClipboard().then((text) => { if (text) pm.pty.write(text); });
+    };
+
+    // Windows Terminal key conventions. Returning false tells xterm not to
+    // handle the key itself; preventDefault also suppresses the browser's own
+    // copy/paste edit command, which would otherwise paste a second time.
+    const handled = (e: KeyboardEvent) => { e.preventDefault(); return false; };
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type !== 'keydown') return true;
+      const key = e.key.toLowerCase();
+
+      if (e.ctrlKey && e.shiftKey && !e.altKey && key === 'c') { copySelection(); return handled(e); }
+      if (e.ctrlKey && !e.shiftKey && key === 'insert') { copySelection(); return handled(e); }
+      // Bare Ctrl+C only copies when something is selected; otherwise it must
+      // still reach the pty as ^C so Claude Code can be interrupted.
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && key === 'c') {
+        if (!selection()) return true;
+        copySelection();
+        return handled(e);
+      }
+
+      if (e.ctrlKey && e.shiftKey && !e.altKey && key === 'v') { paste(); return handled(e); }
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && key === 'insert') { paste(); return handled(e); }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && key === 'v') { paste(); return handled(e); }
+
+      return true;
+    });
+
+    // Windows Terminal style right-click: copy a selection, otherwise paste.
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (selection()) copySelection();
+      else paste();
+    };
+    host.current.addEventListener('contextmenu', onContextMenu);
+
     const offData = pm.pty.onData((d) => term.write(d));
     const input = term.onData((d) => pm.pty.write(d));
     const ro = new ResizeObserver(() => {
@@ -39,9 +105,11 @@ export function Terminal({ status, launchSeq, onRestart }: Props) {
       pm.pty.resize(term.cols, term.rows);
     });
     ro.observe(host.current);
+    const el = host.current;
 
     return () => {
       ro.disconnect();
+      el.removeEventListener('contextmenu', onContextMenu);
       input.dispose();
       offData();
       term.dispose();
