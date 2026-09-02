@@ -2,10 +2,14 @@ import { Menu, type MenuItemConstructorOptions } from 'electron';
 
 /**
  * The window uses `autoHideMenuBar`, so this menu is normally invisible — it
- * exists so the standard edit/view accelerators (Ctrl+C/V/A, Ctrl+R, zoom,
- * devtools) are registered at all. The terminal handles its own copy/paste
- * keys first and calls `preventDefault`, so these roles never double-fire
- * there; they serve the rest of the UI.
+ * exists so the standard edit/view accelerators (Ctrl+C/V/A, zoom, devtools)
+ * are registered at all. The Edit roles never register accelerators of their
+ * own, so the terminal's own copy/paste handling (which calls
+ * `preventDefault`) is what actually wins there. The View roles DO register
+ * global accelerators, which is why `reload`/`forceReload` are intentionally
+ * left out: Electron would bind them to Ctrl+R / Ctrl+Shift+R ahead of the
+ * terminal, killing the shell session whenever a user presses Ctrl+R for
+ * reverse-search.
  */
 export function buildMenuTemplate(): MenuItemConstructorOptions[] {
   return [
@@ -20,7 +24,6 @@ export function buildMenuTemplate(): MenuItemConstructorOptions[] {
     {
       label: '檢視',
       submenu: [
-        { role: 'reload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },

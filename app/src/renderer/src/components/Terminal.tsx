@@ -73,7 +73,7 @@ export function Terminal({ status, launchSeq, onRestart }: Props) {
       if (e.type !== 'keydown') return true;
       const key = e.key.toLowerCase();
 
-      if (e.ctrlKey && e.shiftKey && key === 'c') { copySelection(); return handled(e); }
+      if (e.ctrlKey && e.shiftKey && !e.altKey && key === 'c') { copySelection(); return handled(e); }
       if (e.ctrlKey && !e.shiftKey && key === 'insert') { copySelection(); return handled(e); }
       // Bare Ctrl+C only copies when something is selected; otherwise it must
       // still reach the pty as ^C so Claude Code can be interrupted.
@@ -83,8 +83,8 @@ export function Terminal({ status, launchSeq, onRestart }: Props) {
         return handled(e);
       }
 
-      if (e.ctrlKey && e.shiftKey && key === 'v') { paste(); return handled(e); }
-      if (e.shiftKey && !e.ctrlKey && key === 'insert') { paste(); return handled(e); }
+      if (e.ctrlKey && e.shiftKey && !e.altKey && key === 'v') { paste(); return handled(e); }
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && key === 'insert') { paste(); return handled(e); }
       if (e.ctrlKey && !e.shiftKey && !e.altKey && key === 'v') { paste(); return handled(e); }
 
       return true;

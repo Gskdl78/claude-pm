@@ -141,6 +141,25 @@ describe('Terminal', () => {
       expect(keyHandler(key({ key: 'c', ctrlKey: true, shiftKey: true, type: 'keyup' }))).toBe(true);
       expect(writeText).not.toHaveBeenCalled();
     });
+
+    it('does not throw and writes nothing to the pty when the copy rejects', async () => {
+      term.getSelection.mockReturnValue('selected text');
+      writeText.mockRejectedValueOnce(new Error('clipboard busy'));
+      const e = key({ key: 'C', ctrlKey: true, shiftKey: true });
+      expect(keyHandler(e)).toBe(false);
+      await flush();
+      expect(writeText).toHaveBeenCalledWith('selected text');
+      expect(ptyWrite).not.toHaveBeenCalled();
+    });
+
+    it('does not throw and does not write to the pty when the paste rejects', async () => {
+      readText.mockRejectedValueOnce(new Error('clipboard busy'));
+      const e = key({ key: 'V', ctrlKey: true, shiftKey: true });
+      expect(keyHandler(e)).toBe(false);
+      await flush();
+      expect(readText).toHaveBeenCalled();
+      expect(ptyWrite).not.toHaveBeenCalled();
+    });
   });
 
   describe('right-click', () => {

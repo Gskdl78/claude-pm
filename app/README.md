@@ -42,9 +42,12 @@ Electron 44 的 sandbox renderer 在 `file://` 頁面上已預設授予 `clipboa
 不會跳權限提示，因此不需要額外的 IPC 通道。
 
 應用程式選單（`src/main/menu.ts`）另外註冊了「編輯」（copy／paste／selectAll）與
-「檢視」（reload／toggleDevTools／resetZoom／zoomIn／zoomOut）的標準 role，
-讓這些加速鍵在 `autoHideMenuBar: true` 的情況下依然存在。終端機自己的按鍵處理會先
-`preventDefault()`，所以不會和選單的 role 重複觸發（不會貼上兩次）。
+「檢視」（toggleDevTools／resetZoom／zoomIn／zoomOut）的標準 role，
+讓這些加速鍵在 `autoHideMenuBar: true` 的情況下依然存在。「編輯」的 role 本身不會註冊
+加速鍵，實際生效的是終端機自己會先 `preventDefault()` 的按鍵處理，所以不會重複觸發；
+「檢視」的 role 則會註冊全域加速鍵，這正是選單刻意不放 `reload`／`forceReload` 的原因——
+否則 Ctrl+R／Ctrl+Shift+R 會被 Electron 攔去重新載入視窗，讓使用者按 Ctrl+R 做 shell
+reverse-search 時直接殺掉終端機工作階段。
 
 ## 環境注意事項
 
