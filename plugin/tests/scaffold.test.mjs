@@ -26,7 +26,7 @@ describe('validateName', () => {
   it('accepts simple names and rejects bad ones', () => {
     expect(() => validateName('my-app')).not.toThrow();
     expect(() => validateName('App_2.0')).not.toThrow();
-    for (const bad of ['', '.hidden', 'has space', 'a/b', 'a\b', 'x'.repeat(65), 'CON?']) {
+    for (const bad of ['', '.hidden', 'has space', 'a/b', 'a\\b', 'x'.repeat(65), 'CON?']) {
       expect(() => validateName(bad), bad).toThrow(/invalid project name/);
     }
     expect(NAME_RE.test('ok')).toBe(true);
