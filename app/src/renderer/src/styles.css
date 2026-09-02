@@ -1,0 +1,42 @@
+:root {
+  --bg: #1e1e1e;
+  --panel: #252526;
+  --border: #3c3c3c;
+  --fg: #d4d4d4;
+  --muted: #8a8a8a;
+  --accent: #4ec9b0;
+  --danger: #f14c4c;
+  --warn: #dcdcaa;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+input { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+.app { height: 100%; display: grid; grid-template-columns: 240px 1fr 300px; grid-template-rows: auto 1fr; grid-template-areas: "side stage git" "side term git"; }
+.side { grid-area: side; background: var(--panel); border-right: 1px solid var(--border); overflow: auto; padding: 8px; }
+.stage { grid-area: stage; border-bottom: 1px solid var(--border); padding: 8px 12px; }
+.term { grid-area: term; min-height: 0; position: relative; }
+.git { grid-area: git; background: var(--panel); border-left: 1px solid var(--border); overflow: auto; padding: 8px; }
+.error { color: var(--danger); padding: 6px 0; }
+.muted { color: var(--muted); }
+.project { padding: 6px 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.project.active { background: #37373d; }
+.project .badge { font-size: 11px; color: var(--warn); }
+.stages { display: flex; gap: 8px; margin-bottom: 8px; }
+.chip { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border); font-size: 12px; }
+.chip.done { border-color: var(--accent); color: var(--accent); }
+.chip.in_progress { border-color: var(--warn); color: var(--warn); }
+.chip.blocked { border-color: var(--danger); color: var(--danger); }
+.docs { display: flex; gap: 6px; flex-wrap: wrap; }
+.commit { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.commit .hash { font-family: Consolas, monospace; color: var(--accent); margin-right: 6px; }
+.commit .date { color: var(--muted); font-size: 11px; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(0,0,0,.6); }
+.dialog { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); }
+.dialog form { background: var(--panel); border: 1px solid var(--border); padding: 16px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; min-width: 320px; }
+.center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.xterm-host { position: absolute; inset: 0; padding: 4px; }
