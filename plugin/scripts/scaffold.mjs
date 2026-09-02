@@ -11,10 +11,12 @@ import { initialState, writeState, statePath } from './pm-state-lib.mjs';
 
 export const PLUGIN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// Windows 保留裝置名稱：不分大小寫，含副檔名也不行（例如 nul.txt）。
+export const RESERVED_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
 export function validateName(name) {
-  if (typeof name !== 'string' || !NAME_RE.test(name)) {
-    throw new Error(`invalid project name: "${name}" (英數開頭，僅允許英數 . _ -，最長 64)`);
+  if (typeof name !== 'string' || !NAME_RE.test(name) || name.endsWith('.') || RESERVED_RE.test(name)) {
+    throw new Error(`invalid project name: "${name}" (英數開頭，僅允許英數 . _ -，最長 64，不可為 Windows 保留名稱或以 . 結尾)`);
   }
 }
 
@@ -54,7 +56,8 @@ export function scaffoldProject({ targetDir, name = basename(targetDir), pluginD
 
   if (useGit) {
     if (!existsSync(join(targetDir, '.git'))) git(targetDir, ['init', '-b', 'main']);
-    git(targetDir, ['add', '-A']);
+    // 只加入本次種入的檔案，不要把使用者既有的未提交變更一起 commit。
+    git(targetDir, ['add', '--', '.claude', '.pm', 'CLAUDE.md', '.gitignore']);
     git(targetDir, ['commit', '-q', '-m', 'chore: init project']);
   }
   return { targetDir, name };

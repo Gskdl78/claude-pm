@@ -116,6 +116,31 @@ describe('startStage / finishStage', () => {
     expect(s.stages.env.reason).toBe('T3 審核 3 次未過');
   });
 
+  it('refuses to restart a stage that is already done', () => {
+    let s = startStage(initialState('x'), 'env', now);
+    s = finishStage(s, 'env', { now });
+    expect(() => startStage(s, 'env', now)).toThrow(/cannot start env: already done/);
+  });
+
+  it('refuses to block a stage that is not in progress', () => {
+    expect(() => blockStage(initialState('x'), 'env', '卡住')).toThrow(/cannot block env: status is pending/);
+  });
+
+  it('starting a blocked stage clears reason and sets in_progress', () => {
+    let s = startStage(initialState('x'), 'env', now);
+    s = blockStage(s, 'env', '卡住');
+    s = startStage(s, 'env', now);
+    expect(s.stages.env.status).toBe('in_progress');
+    expect(s.stages.env.reason).toBeUndefined();
+    expect('reason' in s.stages.env).toBe(false);
+  });
+
+  it('finishing without a commit leaves no commit field', () => {
+    let s = startStage(initialState('x'), 'env', now);
+    s = finishStage(s, 'env', { now });
+    expect('commit' in s.stages.env).toBe(false);
+  });
+
   it('rejects unknown stage names', () => {
     expect(() => startStage(initialState('x'), 'deploy', now)).toThrow(/unknown stage/);
   });
@@ -184,6 +209,16 @@ describe('history', () => {
     expect(summary[0]).toEqual({
       cause: '沒有設定連線池', count: 2, projects: ['a', 'b'], fixes: ['加 pool', '設定 max=10'],
     });
+  });
+
+  it.skipIf(process.platform !== 'win32')('excludes the given dir case-insensitively on win32', () => {
+    const root = makeTempDir();
+    const me = join(root, 'Me');
+    let sm = initialState('me');
+    sm = addIssue(sm, { stage: 'build', symptom: 'should be excluded' }).state;
+    writeState(me, sm);
+
+    expect(collectHistory(root, { exclude: join(root, 'ME') })).toEqual([]);
   });
 
   it('summarize falls back to symptom when cause is empty', () => {

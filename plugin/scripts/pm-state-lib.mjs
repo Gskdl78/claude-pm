@@ -78,6 +78,9 @@ export function nextStage(stage) {
 
 export function startStage(state, stage, now = new Date()) {
   assertStage(stage);
+  if (state.stages[stage].status === 'done') {
+    throw new Error(`cannot start ${stage}: already done`);
+  }
   const prev = prevStage(stage);
   if (prev && state.stages[prev].status !== 'done') {
     throw new Error(`cannot start ${stage}: ${prev} is ${state.stages[prev].status}`);
@@ -104,6 +107,8 @@ export function finishStage(state, stage, { commit, now = new Date() } = {}) {
 
 export function blockStage(state, stage, reason) {
   assertStage(stage);
+  const cur = state.stages[stage].status;
+  if (cur !== 'in_progress') throw new Error(`cannot block ${stage}: status is ${cur}`);
   state.stages[stage] = { ...state.stages[stage], status: 'blocked', reason: reason || '' };
   return state;
 }
@@ -143,13 +148,19 @@ export function updateIssue(state, id, patch) {
   return state;
 }
 
+// Windows 路徑不分大小寫，比對前先正規化。
+function samePath(a, b) {
+  const norm = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
+  return norm(a) === norm(b);
+}
+
 export function collectHistory(rootDir, { exclude } = {}) {
   const out = [];
   if (!existsSync(rootDir)) return out;
   for (const d of readdirSync(rootDir, { withFileTypes: true })) {
     if (!d.isDirectory()) continue;
     const dir = join(rootDir, d.name);
-    if (exclude && resolve(dir) === resolve(exclude)) continue;
+    if (exclude && samePath(dir, exclude)) continue;
     const p = statePath(dir);
     if (!existsSync(p)) continue;
     try {

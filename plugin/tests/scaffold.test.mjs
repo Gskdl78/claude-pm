@@ -26,7 +26,8 @@ describe('validateName', () => {
   it('accepts simple names and rejects bad ones', () => {
     expect(() => validateName('my-app')).not.toThrow();
     expect(() => validateName('App_2.0')).not.toThrow();
-    for (const bad of ['', '.hidden', 'has space', 'a/b', 'a\\b', 'x'.repeat(65), 'CON?']) {
+    const reserved = ['CON', 'con', 'PRN', 'AUX', 'NUL', 'nul.txt', 'COM1', 'com9.log', 'LPT1', 'lpt9'];
+    for (const bad of ['', '.hidden', 'has space', 'a/b', 'a\\b', 'x'.repeat(65), 'CON?', 'trailing.', ...reserved]) {
       expect(() => validateName(bad), bad).toThrow(/invalid project name/);
     }
     expect(NAME_RE.test('ok')).toBe(true);
@@ -86,6 +87,25 @@ describe('scaffoldProject', () => {
     scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR });
     expect(readFileSync(join(target, 'CLAUDE.md'), 'utf8')).toBe('# keep me');
     expect(gitLog(target)).toEqual(['chore: init project', 'first']);
+  });
+
+  it('stages only the seeded files, leaving unrelated changes untouched', () => {
+    const root = makeTempDir();
+    const target = join(root, 'dirty');
+    mkdirSync(target);
+    spawnSync('git', ['init', '-b', 'main'], { cwd: target, env: gitEnv() });
+    writeFileSync(join(target, 'a.txt'), 'a');
+    spawnSync('git', ['add', '-A'], { cwd: target, env: gitEnv() });
+    spawnSync('git', ['commit', '-q', '-m', 'first'], { cwd: target, env: gitEnv() });
+    writeFileSync(join(target, 'dirty.txt'), 'do not commit me');
+
+    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR });
+
+    const files = spawnSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: target, encoding: 'utf8', env: gitEnv() }).stdout;
+    expect(files).not.toContain('dirty.txt');
+    expect(files).toContain('.pm/state.json');
+    const status = spawnSync('git', ['status', '--porcelain', '--', 'dirty.txt'], { cwd: target, encoding: 'utf8', env: gitEnv() }).stdout;
+    expect(status.trim()).toBe('?? dirty.txt');
   });
 
   it('CLI prints JSON', () => {

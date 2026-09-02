@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeTempDir, gitEnv } from './helpers.mjs';
 
 // npm test 從 repo 根目錄執行 vitest（--root plugin 不改變 cwd），所以用檔案位置解析。
@@ -78,6 +78,18 @@ describe('pm-state CLI', () => {
     expect(r.json.stages.env.commit).toMatch(/^[0-9a-f]{7,}$/);
     expect(r.json.stages.design.status).toBe('in_progress');
     expect(run(dir, 'get').json.stage).toBe('design');
+  });
+
+  it('can be imported without running the CLI', () => {
+    const url = pathToFileURL(CLI).href;
+    const r = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', `import(${JSON.stringify(url)}).then((m) => process.stdout.write(typeof m.main))`],
+      { cwd: makeTempDir(), encoding: 'utf8', env: gitEnv() },
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('function');
+    expect(r.stderr).not.toMatch(/usage/i);
   });
 
   it('unknown command exits 2 with usage', () => {

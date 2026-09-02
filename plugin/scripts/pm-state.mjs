@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // CLI：node .pm/pm-state.mjs <cmd> [...args]   （在專案根目錄執行）
 import { basename, dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import * as lib from './pm-state-lib.mjs';
@@ -104,9 +105,12 @@ export function main(argv, cwd = process.cwd()) {
   }
 }
 
-try {
-  process.exit(main(process.argv.slice(2)));
-} catch (e) {
-  process.stderr.write(`pm-state: ${e.message}\n`);
-  process.exit(1);
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (isMain) {
+  try {
+    process.exitCode = main(process.argv.slice(2));
+  } catch (e) {
+    process.stderr.write(`pm-state: ${e.message}\n`);
+    process.exitCode = 1;
+  }
 }
