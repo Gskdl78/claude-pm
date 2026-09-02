@@ -9,6 +9,7 @@ description: 階段 2 產品設計。逐題釐清需求後寫出 PRD，依專案
 1. 執行 `node .pm/pm-state.mjs get`。
    - `stages.env.status` 不是 `done`：告訴使用者先執行 `/stage-env`，停止。
    - `stages.design.status` 是 `done`：告知已完成，建議 `/stage-tech`，停止。
+   - `stages.design.status` 是 `in_progress` 且 `docs/product/prd.md` 已存在：先用 AskUserQuestion 問使用者要沿用既有 PRD 直接跳到步驟 C，還是重新釐清（回到步驟 A）。
 2. 執行 `node .pm/pm-state.mjs start design`。
 3. 讀 CLAUDE.md 取得專案類型與技術棧。
 

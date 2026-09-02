@@ -17,7 +17,7 @@ description: 當需要讀取或更新專案階段狀態（.pm/state.json）、�
 | `node .pm/pm-state.mjs block <stage> --reason "<原因>"` | 標記卡住 |
 | `node .pm/pm-state.mjs add-doc <stage> <相對路徑>` | 登記階段產出文件 |
 | `node .pm/pm-state.mjs add-issue --stage <s> --symptom "<症狀>" [--task T1] [--cause "<根因>"] [--fix "<修法>"] [--commit <sha>]` | 記錄問題，回傳 `{ id, issue }` |
-| `node .pm/pm-state.mjs update-issue <id> [--cause] [--fix] [--commit <sha>]` | 補上根因、修法、commit |
+| `node .pm/pm-state.mjs update-issue <id> [--cause "<根因>"] [--fix "<修法>"] [--commit <sha>]` | 補上根因、修法、commit |
 | `node .pm/pm-state.mjs history [rootDir]` | 彙整同層其他專案的 issue（依根因分組、次數降冪） |
 | `node .pm/pm-state.mjs rebuild [name]` | state 損毀時依檔案與 git log 重建 |
 
