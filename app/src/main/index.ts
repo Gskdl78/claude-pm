@@ -1,5 +1,8 @@
 import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
+import { registerIpc } from './ipc';
+import { PtyManager } from './pty';
+import { getPluginDir } from './plugin-dir';
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -29,7 +32,10 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
-  createWindow();
+  const win = createWindow();
+  const pty = new PtyManager();
+  registerIpc({ win, pty, pluginDir: getPluginDir() });
+  app.on('before-quit', () => pty.kill());
 });
 
 app.on('window-all-closed', () => app.quit());
