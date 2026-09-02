@@ -34,6 +34,21 @@ export interface Handlers {
   dispose: () => void;
 }
 
+/** Only slash commands may be injected as the first prompt of a session. */
+const SLASH_COMMAND_RE = /^\/[a-z][a-z0-9-]*$/;
+
+function checkInitialPrompt(v: unknown): string | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string' || !SLASH_COMMAND_RE.test(v)) throw new Error('invalid initialPrompt');
+  return v;
+}
+
+/** The renderer is untrusted input: keep the pty geometry a sane integer. */
+function clampSize(v: unknown, fallback: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
+  return Math.min(500, Math.max(1, Math.floor(v)));
+}
+
 export function createHandlers(deps: HandlerDeps): Handlers {
   let cfg = loadConfig(deps.configFile);
   let watcher: ProjectWatcher | null = null;
@@ -89,17 +104,22 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'pty:start': async (path, opts) => {
       const dir = guard(path);
+      const initialPrompt = checkInitialPrompt(opts.initialPrompt);
       deps.pty.start({
         cwd: dir,
         command: 'claude',
-        args: buildClaudeArgs({ continue: opts.continue, initialPrompt: opts.initialPrompt }),
-        cols: opts.cols,
-        rows: opts.rows,
+        args: buildClaudeArgs({ continue: opts.continue, initialPrompt }),
+        cols: clampSize(opts.cols, 80),
+        rows: clampSize(opts.rows, 24),
       });
     },
 
-    'pty:write': (data) => deps.pty.write(data),
-    'pty:resize': (cols, rows) => deps.pty.resize(cols, rows),
+    'pty:write': (data) => { if (typeof data === 'string') deps.pty.write(data); },
+    'pty:resize': (cols, rows) => {
+      if (typeof cols !== 'number' || !Number.isFinite(cols)) return;
+      if (typeof rows !== 'number' || !Number.isFinite(rows)) return;
+      deps.pty.resize(cols, rows);
+    },
     'pty:kill': async () => deps.pty.kill(),
 
     dispose: () => { watcher?.stop(); watcher = null; },

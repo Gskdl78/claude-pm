@@ -23,6 +23,8 @@ function createWindow(): BrowserWindow {
     void shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The renderer only ever shows the bundled UI; a navigation would replace it.
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
   } else {
