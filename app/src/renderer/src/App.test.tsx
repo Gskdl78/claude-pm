@@ -33,7 +33,16 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
     rebuildState: vi.fn(),
     getGitLog: vi.fn(async () => []),
     openPath: vi.fn(async () => ''),
-    git: undefined as unknown as PmApi['git'],
+    git: {
+      status: vi.fn(async () => ({
+        isRepo: true, branch: 'main', detached: false, noCommits: false, upstream: null,
+        ahead: 0, behind: 0, hasRemote: false, merging: false, files: [],
+      })),
+      branches: vi.fn(async () => ({ current: 'main', all: ['main'] })),
+      diff: vi.fn(async () => ''),
+      show: vi.fn(async () => ''),
+      run: vi.fn(async () => ({ ok: true, code: 0, stdout: '', stderr: '', command: 'git' })),
+    },
     pty: {
       start: vi.fn(async () => {}),
       write: vi.fn(), resize: vi.fn(), kill: vi.fn(async () => {}),
@@ -226,5 +235,19 @@ describe('App', () => {
     expect(screen.getByText('產品設計')).toHaveClass('in_progress');
     fireEvent.click(screen.getByRole('button', { name: 'docs/product/prd.md' }));
     expect(api.openPath).toHaveBeenCalledWith('C:\\P\\alpha\\docs/product/prd.md');
+  });
+
+  it('mounts the git panel for the open project and refreshes it on git events', async () => {
+    const gitListeners: Array<(c: GitCommit[]) => void> = [];
+    const api = mockApi({ onGitChanged: vi.fn((cb) => { gitListeners.push(cb); return () => {}; }) });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.git.status).toHaveBeenCalledWith('C:\\P\\alpha'));
+    expect(await screen.findByRole('tab', { name: '變更' })).toBeInTheDocument();
+    const n = vi.mocked(api.git.status).mock.calls.length;
+    await act(async () => { gitListeners.forEach((cb) => cb([{ hash: 'abc1234', date: '2026-09-02T10:00:00+08:00', message: 'chore: x' }])); });
+    await waitFor(() => expect(vi.mocked(api.git.status).mock.calls.length).toBeGreaterThan(n));
+    fireEvent.click(screen.getByRole('tab', { name: '歷史' }));
+    expect(screen.getByText('chore: x')).toBeInTheDocument();
   });
 });
