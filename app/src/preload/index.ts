@@ -18,6 +18,7 @@ const api: PmApi = {
   rebuildState: (path) => ipcRenderer.invoke('projects:rebuild', path),
   getGitLog: (path, n) => ipcRenderer.invoke('git:log', path, n),
   openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
+  git: undefined as unknown as PmApi['git'],
   pty: {
     start: (path, opts) => ipcRenderer.invoke('pty:start', path, opts),
     write: (data) => ipcRenderer.send('pty:write', data),

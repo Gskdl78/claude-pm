@@ -67,6 +67,60 @@ export interface PtyStartOptions {
   rows: number;
 }
 
+// ---- git panel ----------------------------------------------------------------
+export interface GitFileChange {
+  path: string;        // repo 相對路徑，git 輸出的正斜線
+  origPath?: string;   // rename / copy 的來源
+  index: string;       // porcelain X 欄
+  work: string;        // porcelain Y 欄
+  staged: boolean;     // 非 untracked、非衝突且 X !== ' '
+  unstaged: boolean;   // 非 untracked、非衝突且 Y !== ' '
+  untracked: boolean;  // '??'
+  conflicted: boolean; // X 或 Y 為 U，或 AA / DD
+}
+
+export interface GitStatus {
+  isRepo: boolean;
+  branch: string;          // 分離 HEAD 時為 'HEAD'
+  detached: boolean;
+  noCommits: boolean;      // 「No commits yet」：HEAD 不存在
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  hasRemote: boolean;
+  merging: boolean;        // .git/MERGE_HEAD 存在
+  files: GitFileChange[];
+}
+
+export interface GitBranches { current: string; all: string[] }
+
+export interface GitResult { ok: boolean; code: number; stdout: string; stderr: string; command: string }
+
+export type GitDiffMode = 'staged' | 'unstaged' | 'untracked';
+
+export type GitAction =
+  | { kind: 'init' }
+  | { kind: 'stage'; file: string }
+  | { kind: 'unstage'; file: string }
+  | { kind: 'stageAll' }
+  | { kind: 'unstageAll' }
+  | { kind: 'discard'; file: string; untracked: boolean }
+  | { kind: 'commit'; message: string; amend: boolean }
+  | { kind: 'switch'; branch: string }
+  | { kind: 'createBranch'; branch: string }
+  | { kind: 'merge'; branch: string }
+  | { kind: 'push' }
+  | { kind: 'pull' }
+  | { kind: 'fetch' };
+
+export interface GitApi {
+  status(path: string): Promise<GitStatus>;
+  branches(path: string): Promise<GitBranches>;
+  diff(path: string, file: string, mode: GitDiffMode): Promise<string>;
+  show(path: string, hash: string): Promise<string>;
+  run(path: string, action: GitAction): Promise<GitResult>;
+}
+
 export interface PmApi {
   getConfig(): Promise<AppConfig>;
   setRoot(root: string): Promise<AppConfig>;
@@ -78,6 +132,7 @@ export interface PmApi {
   rebuildState(path: string): Promise<ProjectInfo>;
   getGitLog(path: string, n?: number): Promise<GitCommit[]>;
   openPath(path: string): Promise<string>;
+  git: GitApi;
   pty: {
     start(path: string, opts: PtyStartOptions): Promise<void>;
     write(data: string): void;

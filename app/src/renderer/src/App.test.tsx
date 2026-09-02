@@ -33,6 +33,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
     rebuildState: vi.fn(),
     getGitLog: vi.fn(async () => []),
     openPath: vi.fn(async () => ''),
+    git: undefined as unknown as PmApi['git'],
     pty: {
       start: vi.fn(async () => {}),
       write: vi.fn(), resize: vi.fn(), kill: vi.fn(async () => {}),
