@@ -10,7 +10,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
    - `stages.tech.status` 不是 `done`：請使用者先執行 `/stage-tech`，停止。
    - `stages.build.status` 是 `done`：告知已完成，建議 `/stage-verify`，停止。
    - `stages.build.status` 是 `blocked`：說明 `reason`，詢問使用者如何處理，同意後才繼續。
-2. 若 `stages.build.status` 是 `pending`，執行 `node .pm/pm-state.mjs start build`。
+2. 若 `stages.build.status` 是 `pending`，或是 `blocked` 且使用者已同意繼續，執行 `node .pm/pm-state.mjs start build`（此舉會清除 blocked 標記並設回 in_progress）。
 3. 讀 CLAUDE.md（模型政策、建置與測試指令）、`docs/tech/architecture.md`、`docs/tech/tasks.md`。
 4. 若 `docs/build/log.md` 不存在，建立並寫入 `# Build Log`。
 5. 取專案絕對路徑：`pwd`。

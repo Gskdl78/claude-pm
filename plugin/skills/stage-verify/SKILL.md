@@ -9,7 +9,7 @@ description: 階段 5 人工驗證。產出人工測試清單，接收使用者�
 1. 執行 `node .pm/pm-state.mjs get`。
    - `stages.build.status` 不是 `done`：請使用者先執行 `/stage-build`，停止。
    - `stages.verify.status` 是 `done`：告知專案已完成，停止。
-2. 若 `stages.verify.status` 是 `pending`，執行 `node .pm/pm-state.mjs start verify`。
+2. 若 `stages.verify.status` 是 `pending`，或是 `blocked` 且使用者已同意繼續，執行 `node .pm/pm-state.mjs start verify`（此舉會清除 blocked 標記並設回 in_progress）。
 3. 讀 CLAUDE.md、`docs/product/prd.md`、`docs/tech/tasks.md`。取專案絕對路徑：`pwd`。
 
 ## 步驟 A：產出清單（若 `docs/verify/checklist.md` 已存在則跳到步驟 B）
