@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GitBranches, GitFileChange, GitResult, GitStatus } from '../shared/types';
+import type { GitBranches, GitDiffMode, GitFileChange, GitResult, GitStatus } from '../shared/types';
 import { formatGitCommand } from '../shared/git-actions';
 
 export const MAX_TEXT = 512 * 1024;
@@ -130,4 +130,35 @@ export async function getBranches(dir: string): Promise<GitBranches> {
     if (line[0] === '*') current = name;
   }
   return { current, all };
+}
+
+function clip(text: string): string {
+  return text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + TRUNCATED : text;
+}
+
+/** 未追蹤檔沒有 diff 可看，改顯示內容；路徑已由 handler 驗證為 repo 內相對路徑。 */
+function readUntracked(dir: string, file: string): string {
+  const full = join(dir, file);
+  try {
+    if (statSync(full).isDirectory()) return '（新資料夾）';
+    const buf = readFileSync(full);
+    if (buf.subarray(0, 8000).includes(0)) return '（二進位檔案）';
+    return clip(`（新檔案）\n${buf.toString('utf8')}`);
+  } catch {
+    return '（無法讀取檔案）';
+  }
+}
+
+export async function getDiff(dir: string, file: string, mode: GitDiffMode): Promise<string> {
+  if (mode === 'untracked') return readUntracked(dir, file);
+  const args = mode === 'staged' ? ['diff', '--cached', '--', file] : ['diff', '--', file];
+  const r = await runGit(dir, args);
+  if (!r.ok) throw new Error(r.stderr);
+  return clip(r.stdout);
+}
+
+export async function showCommit(dir: string, hash: string): Promise<string> {
+  const r = await runGit(dir, ['show', '--stat', '--patch', hash, '--']);
+  if (!r.ok) throw new Error(r.stderr);
+  return clip(r.stdout);
 }

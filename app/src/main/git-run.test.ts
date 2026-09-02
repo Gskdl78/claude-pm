@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { getBranches, getStatus, hasHead, parseStatus, runGit } from './git-run';
+import { getBranches, getDiff, getStatus, hasHead, parseStatus, runGit, showCommit, MAX_TEXT, TRUNCATED } from './git-run';
 
 beforeAll(() => {
   Object.assign(process.env, {
@@ -106,5 +106,37 @@ describe('runGit / getStatus / getBranches', () => {
     const s = await getStatus(dir);
     expect(s.merging).toBe(true);
     expect(s.files[0]).toMatchObject({ path: 'a.txt', conflicted: true });
+  });
+});
+
+describe('getDiff / showCommit', () => {
+  it('returns staged and unstaged diffs, untracked previews and commit patches', async () => {
+    const dir = repo();
+    commit(dir, 'a.txt', 'one\n');
+    writeFileSync(join(dir, 'a.txt'), 'two\n');
+    git(dir, 'add', 'a.txt');
+    writeFileSync(join(dir, 'a.txt'), 'three\n');
+    writeFileSync(join(dir, 'n.txt'), 'hello');
+    expect(await getDiff(dir, 'a.txt', 'staged')).toMatch(/-one\n\+two/);
+    expect(await getDiff(dir, 'a.txt', 'unstaged')).toMatch(/-two\n\+three/);
+    expect(await getDiff(dir, 'n.txt', 'unstaged')).toBe('');
+    expect(await getDiff(dir, 'n.txt', 'untracked')).toBe('（新檔案）\nhello');
+    expect(await getDiff(dir, 'missing.txt', 'untracked')).toBe('（無法讀取檔案）');
+
+    mkdirSync(join(dir, 'sub'));
+    writeFileSync(join(dir, 'sub', 'bin'), Buffer.from([0, 1, 2]));
+    expect(await getDiff(dir, 'sub/', 'untracked')).toBe('（新資料夾）');
+    expect(await getDiff(dir, 'sub/bin', 'untracked')).toBe('（二進位檔案）');
+
+    writeFileSync(join(dir, 'big.txt'), 'x'.repeat(MAX_TEXT + 10));
+    const big = await getDiff(dir, 'big.txt', 'untracked');
+    expect(big.endsWith(TRUNCATED)).toBe(true);
+    expect(big.length).toBe(MAX_TEXT + TRUNCATED.length);
+
+    const hash = git(dir, 'rev-parse', '--short', 'HEAD').trim();
+    const shown = await showCommit(dir, hash);
+    expect(shown).toMatch(/a\.txt \|/);
+    expect(shown).toMatch(/\+one/);
+    await expect(showCommit(dir, 'deadbeef')).rejects.toThrow();
   });
 });
