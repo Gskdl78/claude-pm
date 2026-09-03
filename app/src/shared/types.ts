@@ -1,3 +1,6 @@
+import type { Settings, ConfigPatch } from './config-schema';
+export type { ConfigPatch, ModelName, Settings } from './config-schema';
+
 export type StageName = 'env' | 'design' | 'tech' | 'build' | 'verify';
 export const STAGE_NAMES: StageName[] = ['env', 'design', 'tech', 'build', 'verify'];
 export const STAGE_LABELS: Record<StageName, string> = {
@@ -49,7 +52,7 @@ export interface GitCommit {
   message: string;
 }
 
-export interface AppConfig {
+export interface AppConfig extends Settings {
   root: string;
   lastProject: string | null;
   recent: string[];

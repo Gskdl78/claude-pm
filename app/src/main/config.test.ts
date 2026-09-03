@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configPath, defaultConfig, loadConfig, saveConfig, rememberProject } from './config';
+import { DEFAULT_SETTINGS } from '../shared/config-schema';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'pm-cfg-'));
 
@@ -21,12 +22,20 @@ describe('config', () => {
   it('loadConfig fills missing fields', () => {
     const file = join(tmp(), 'config.json');
     writeFileSync(file, JSON.stringify({ root: 'D:\\Work' }));
-    expect(loadConfig(file)).toEqual({ root: 'D:\\Work', lastProject: null, recent: [] });
+    expect(loadConfig(file)).toEqual({ root: 'D:\\Work', lastProject: null, recent: [], ...DEFAULT_SETTINGS });
+  });
+
+  it('loadConfig keeps settings fields and drops bad ones', () => {
+    const file = join(tmp(), 'config.json');
+    writeFileSync(file, JSON.stringify({ root: 'D:\\Work', implModel: 'sonnet', termFontSize: 99 }));
+    const cfg = loadConfig(file);
+    expect(cfg.implModel).toBe('sonnet');
+    expect(cfg.termFontSize).toBe(14);
   });
 
   it('saveConfig creates directory and round-trips', () => {
     const file = join(tmp(), 'nested', 'config.json');
-    const cfg = { root: 'D:\\Work', lastProject: 'D:\\Work\\a', recent: ['D:\\Work\\a'] };
+    const cfg = { root: 'D:\\Work', lastProject: 'D:\\Work\\a', recent: ['D:\\Work\\a'], ...DEFAULT_SETTINGS };
     saveConfig(cfg, file);
     expect(existsSync(file)).toBe(true);
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(cfg);

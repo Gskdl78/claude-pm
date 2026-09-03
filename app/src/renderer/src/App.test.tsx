@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import type { GitCommit, PmApi, ProjectInfo, StageName } from '../../shared/types';
+import { DEFAULT_SETTINGS } from '../../shared/config-schema';
+
+const CFG = { root: 'C:\\P', lastProject: null as string | null, recent: [] as string[], ...DEFAULT_SETTINGS };
 
 vi.mock('./components/Terminal', () => ({
   Terminal: ({ status, onRestart, visible = true }: { status: string; onRestart: () => void; visible?: boolean }) => (
@@ -41,7 +44,7 @@ type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: numbe
 
 function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [], idle: [], docs: [] }): PmApi {
   const api: PmApi = {
-    getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: null, recent: [] })),
+    getConfig: vi.fn(async () => ({ ...CFG, lastProject: null })),
     setRoot: vi.fn(),
     checkClaude: vi.fn(async () => ({ ok: true, path: 'claude' })),
     listProjects: vi.fn(async () => [project('alpha')]),
@@ -113,7 +116,7 @@ describe('App', () => {
   it('auto-opens lastProject with --continue and falls back when continue exits early', async () => {
     const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({
-      getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
+      getConfig: vi.fn(async () => ({ ...CFG, lastProject: 'C:\\P\\beta' })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
       openProject: vi.fn(async () => project('beta', 'done')),
     }, listeners);
@@ -158,7 +161,7 @@ describe('App', () => {
   it('falls back once without --continue when a continue launch fails late', async () => {
     const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({
-      getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
+      getConfig: vi.fn(async () => ({ ...CFG, lastProject: 'C:\\P\\beta' })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
       openProject: vi.fn(async () => project('beta', 'done')),
     }, listeners);
