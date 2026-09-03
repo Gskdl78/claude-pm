@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 把 pm-workflow 種入一個專案資料夾。
-// 用法：node scaffold.mjs <targetDir> [name] [--no-git]
+// 用法：node scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=]
 import {
   cpSync, existsSync, mkdirSync, readFileSync, writeFileSync,
 } from 'node:fs';
@@ -20,6 +20,29 @@ export function validateName(name) {
   }
 }
 
+export const MODEL_NAME_RE = /^[a-z0-9.-]{1,32}$/;
+export const DEFAULT_VARS = { implModel: 'opus', reviewModel: 'fable', maxRetries: 3 };
+
+/** 從 argv 取出 --impl-model= --review-model= --max-retries=，其餘原樣回傳。 */
+export function parseVars(args) {
+  const vars = {};
+  const rest = [];
+  for (const a of args) {
+    const m = /^--(impl-model|review-model|max-retries)=(.*)$/.exec(a);
+    if (!m) { rest.push(a); continue; }
+    const [, key, value] = m;
+    if (key === 'max-retries') {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error(`invalid --max-retries: "${value}"（1–10 的整數）`);
+      vars.maxRetries = n;
+    } else {
+      if (!MODEL_NAME_RE.test(value)) throw new Error(`invalid --${key}: "${value}"（小寫英數 . -，最長 32）`);
+      vars[key === 'impl-model' ? 'implModel' : 'reviewModel'] = value;
+    }
+  }
+  return { vars, rest };
+}
+
 export function isInitialized(dir) {
   return existsSync(statePath(dir));
 }
@@ -32,7 +55,7 @@ function git(cwd, args) {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
 
-export function scaffoldProject({ targetDir, name = basename(targetDir), pluginDir = PLUGIN_DIR, git: useGit = true }) {
+export function scaffoldProject({ targetDir, name = basename(targetDir), pluginDir = PLUGIN_DIR, git: useGit = true, vars = {} }) {
   validateName(name);
   if (isInitialized(targetDir)) throw new Error(`already initialized: ${targetDir}`);
   mkdirSync(targetDir, { recursive: true });
@@ -47,7 +70,7 @@ export function scaffoldProject({ targetDir, name = basename(targetDir), pluginD
   const claudeMd = join(targetDir, 'CLAUDE.md');
   if (!existsSync(claudeMd)) {
     const tpl = readFileSync(join(pluginDir, 'templates', 'CLAUDE.md'), 'utf8');
-    writeFileSync(claudeMd, renderTemplate(tpl, { name, type: 'other', notes: '（尚無歷史注意事項）' }));
+    writeFileSync(claudeMd, renderTemplate(tpl, { name, type: 'other', notes: '（尚無歷史注意事項）', ...DEFAULT_VARS, ...vars }));
   }
   const gitignore = join(targetDir, '.gitignore');
   if (!existsSync(gitignore)) cpSync(join(pluginDir, 'templates', 'gitignore'), gitignore);
@@ -66,12 +89,12 @@ export function scaffoldProject({ targetDir, name = basename(targetDir), pluginD
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
   try {
-    const args = process.argv.slice(2);
-    const useGit = !args.includes('--no-git');
-    const positional = args.filter((a) => !a.startsWith('--'));
-    if (!positional[0]) throw new Error('usage: scaffold.mjs <targetDir> [name] [--no-git]');
+    const { vars, rest } = parseVars(process.argv.slice(2));
+    const useGit = !rest.includes('--no-git');
+    const positional = rest.filter((a) => !a.startsWith('--'));
+    if (!positional[0]) throw new Error('usage: scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=]');
     const targetDir = resolve(positional[0]);
-    const result = scaffoldProject({ targetDir, name: positional[1] ?? basename(targetDir), git: useGit });
+    const result = scaffoldProject({ targetDir, name: positional[1] ?? basename(targetDir), git: useGit, vars });
     process.stdout.write(JSON.stringify(result) + '\n');
   } catch (e) {
     process.stderr.write(`scaffold: ${e.message}\n`);

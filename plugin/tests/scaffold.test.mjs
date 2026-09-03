@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { makeTempDir, gitEnv } from './helpers.mjs';
 import {
-  NAME_RE, validateName, isInitialized, renderTemplate, scaffoldProject,
+  NAME_RE, validateName, isInitialized, renderTemplate, scaffoldProject, parseVars, MODEL_NAME_RE,
 } from '../scripts/scaffold.mjs';
 
 const PLUGIN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -114,5 +114,50 @@ describe('scaffoldProject', () => {
     const r = spawnSync(process.execPath, [join(PLUGIN_DIR, 'scripts', 'scaffold.mjs'), target, 'cli', '--no-git'], { encoding: 'utf8', env: gitEnv() });
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({ targetDir: target, name: 'cli' });
+  });
+
+  it('renders the model policy from defaults when no vars are given', () => {
+    const root = makeTempDir();
+    const target = join(root, 'defaults');
+    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false });
+    const claude = readFileSync(join(target, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('實作 subagent：`opus`');
+    expect(claude).toContain('審核 subagent：一律 `fable`');
+    expect(claude).toContain('審核退回上限 3 次；第 3 次仍不過');
+    expect(claude).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  it('renders the model policy from vars', () => {
+    const root = makeTempDir();
+    const target = join(root, 'vars');
+    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false, vars: { implModel: 'sonnet', reviewModel: 'opus', maxRetries: 5 } });
+    const claude = readFileSync(join(target, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('實作 subagent：`sonnet`');
+    expect(claude).toContain('升為 `opus`');
+    expect(claude).toContain('審核退回上限 5 次；第 5 次仍不過');
+  });
+
+  it('cli accepts model flags', () => {
+    const root = makeTempDir();
+    const target = join(root, 'cli');
+    const r = spawnSync(process.execPath, [join(PLUGIN_DIR, 'scripts', 'scaffold.mjs'), target, '--no-git', '--impl-model=sonnet', '--max-retries=2'], { encoding: 'utf8', env: gitEnv() });
+    expect(r.status).toBe(0);
+    const claude = readFileSync(join(target, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('實作 subagent：`sonnet`');
+    expect(claude).toContain('審核退回上限 2 次');
+  });
+});
+
+describe('parseVars', () => {
+  it('extracts model flags and leaves the rest', () => {
+    const { vars, rest } = parseVars(['C:\\x\\demo', '--impl-model=sonnet', 'demo', '--review-model=fable', '--max-retries=7', '--no-git']);
+    expect(vars).toEqual({ implModel: 'sonnet', reviewModel: 'fable', maxRetries: 7 });
+    expect(rest).toEqual(['C:\\x\\demo', 'demo', '--no-git']);
+  });
+  it('rejects bad values', () => {
+    expect(() => parseVars(['--max-retries=0'])).toThrow(/max-retries/);
+    expect(() => parseVars(['--max-retries=abc'])).toThrow(/max-retries/);
+    expect(() => parseVars(['--impl-model=GPT 5'])).toThrow(/impl-model/);
+    expect(MODEL_NAME_RE.test('claude-fable-5.1')).toBe(true);
   });
 });

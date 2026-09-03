@@ -12,9 +12,9 @@
 - 使用者若直接要求寫功能程式碼而 build 階段尚未開始，先提醒目前階段並建議跑對應 skill。
 
 ## 模型政策
-- 實作 subagent：`opus`。任務說明含「重構」「認證」「權限」「加密」「遷移」時升為 `fable`。
-- 審核 subagent：一律 `fable`。
-- 審核退回上限 3 次；第 3 次仍不過標記 blocked 並詢問使用者。
+- 實作 subagent：`{{implModel}}`。任務說明含「重構」「認證」「權限」「加密」「遷移」時升為 `{{reviewModel}}`。
+- 審核 subagent：一律 `{{reviewModel}}`。
+- 審核退回上限 {{maxRetries}} 次；第 {{maxRetries}} 次仍不過標記 blocked 並詢問使用者。
 
 ## Git 規則
 - 每階段結束必 commit；build 階段每個任務一 commit；修錯必 commit。
