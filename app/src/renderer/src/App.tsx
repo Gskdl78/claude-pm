@@ -6,7 +6,10 @@ import { ProjectList } from './components/ProjectList';
 import { NewProjectDialog } from './components/NewProjectDialog';
 import { StagePanel } from './components/StagePanel';
 import { GitPanel } from './components/git/GitPanel';
+import { ConfirmDialog } from './components/git/ConfirmDialog';
 import { CenterPane, type CenterTab } from './components/CenterPane';
+import type { SessionState } from './components/Terminal';
+import { SessionLimitDialog } from './components/SessionLimitDialog';
 import { isDocRelPath } from '../../shared/docs-path';
 import { errorMessage } from './errors';
 import { ClaudeMissing } from './components/ClaudeMissing';
@@ -21,6 +24,11 @@ export const ENTER_DELAY_MS = 50;
 // GitPanel 只需要 id 遞增，不需要完整歷史，所以提示只保留最近幾筆。
 const MAX_NOTICES = 50;
 
+// renderer 沒有 node 的 path 模組，專案名一律從路徑尾端取。
+function basename(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -28,13 +36,12 @@ export default function App() {
   const [current, setCurrent] = useState<ProjectInfo | null>(null);
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [gitRevision, setGitRevision] = useState(0);
-  const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle');
-  const [launchSeq, setLaunchSeq] = useState(0);
+  // 每個專案一個 session；切換專案只是換顯示，不再殺掉前一個。
+  const [sessions, setSessions] = useState<Record<string, SessionState>>({});
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
-  const [ptyIdle, setPtyIdle] = useState(false);
   const [flashSeq, setFlashSeq] = useState(0);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [centerTab, setCenterTab] = useState<CenterTab>('terminal');
@@ -43,6 +50,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  // 超過 session 上限而還沒開成的專案；有值時顯示上限對話框
+  const [limitPending, setLimitPending] = useState<ProjectInfo | null>(null);
+  const [limitBusy, setLimitBusy] = useState(false);
+  // 等待使用者確認關閉 session 的專案
+  const [closeReq, setCloseReq] = useState<ProjectInfo | null>(null);
   // 設定對話框關閉（儲存或取消）時遞增，讓終端機把焦點要回來
   const [focusSeq, setFocusSeq] = useState(0);
   // 任一專案的 state 有變動時 +1，讓洞察分頁下次顯示時重讀
@@ -51,7 +63,11 @@ export default function App() {
   const [revealCommit, setRevealCommit] = useState<{ hash: string; seq: number } | null>(null);
 
   const currentRef = useRef<ProjectInfo | null>(null);
-  const launchRef = useRef<{ usedContinue: boolean } | null>(null);
+  // pty 事件是非同步進來的，回呼裡不能靠 render 時的 state 判斷。
+  const sessionsRef = useRef<Record<string, SessionState>>({});
+  sessionsRef.current = sessions;
+  const projectsRef = useRef<ProjectInfo[]>([]);
+  projectsRef.current = projects;
   const noticeId = useRef(0);
   const revealSeq = useRef(0);
   // 上一次看到的 (專案路徑, stage)；只在同一專案內比較，切專案就重設
@@ -66,6 +82,18 @@ export default function App() {
     // 每次都以最新資料為基準；onStateChanged 路徑會先呼叫 noteStageChange，
     // 寫入的值相同，因此不會漏掉或重複提示。
     lastStageRef.current = p.state ? { path: p.path, stage: p.state.stage } : null;
+  }, []);
+
+  // sessionsRef 必須跟著 state 一起換，否則同一輪連續進來的事件會看到舊的 map。
+  const updateSession = useCallback((path: string, next: SessionState | null | ((prev: SessionState | undefined) => SessionState | null)) => {
+    setSessions((prev) => {
+      const value = typeof next === 'function' ? next(prev[path]) : next;
+      const copy = { ...prev };
+      if (value === null) delete copy[path];
+      else copy[path] = value;
+      sessionsRef.current = copy;
+      return copy;
+    });
   }, []);
 
   // 階段提示與文件分頁共用同一個佇列；只保留最近 MAX_NOTICES 筆。
@@ -88,16 +116,22 @@ export default function App() {
     setFlashSeq((n) => n + 1);
   }, [pushNotice]);
 
+  // 專案被刪掉（或換了根目錄）之後清單就看不到它了，留著的 session 一併收掉。
   const refreshProjects = useCallback(async () => {
     const list = await pm.listProjects();
     setProjects(list);
+    const known = new Set(list.map((p) => p.path));
+    for (const path of Object.keys(sessionsRef.current)) {
+      if (known.has(path)) continue;
+      void pm.pty.kill(path);
+      updateSession(path, null);
+    }
     return list;
-  }, []);
+  }, [updateSession]);
 
   const launch = useCallback(async (p: ProjectInfo, allowContinue: boolean) => {
     const envPending = !p.state || p.state.stages.env.status === 'pending';
     const usedContinue = allowContinue && !envPending;
-    launchRef.current = { usedContinue };
     try {
       await pm.pty.start(p.path, {
         continue: usedContinue,
@@ -106,26 +140,27 @@ export default function App() {
         rows: 30,
       });
     } catch (e) {
-      setPtyIdle(false);
-      setPtyStatus('exited');
-      setError(errorMessage(e));
+      const msg = errorMessage(e);
+      // 上限不是錯誤：請使用者挑一個 session 關掉再繼續。
+      if (/too many sessions/.test(msg)) { setLimitPending(p); return; }
+      updateSession(p.path, (prev) => ({ status: 'exited', idle: false, launchSeq: prev?.launchSeq ?? 0, usedContinue }));
+      setError(msg);
       return;
     }
     // 新 session 一定從忙碌開始；主行程也會再送一次 idle=false。
-    setPtyIdle(false);
-    setPtyStatus('running');
     // Every launch gets a new pty at the fixed 120x30 above; bumping the seq
-    // makes Terminal re-fit and resize it to the real viewport each time.
-    setLaunchSeq((n) => n + 1);
-  }, []);
+    // makes the terminal re-fit and clear the previous conversation.
+    updateSession(p.path, (prev) => ({ status: 'running', idle: false, launchSeq: (prev?.launchSeq ?? 0) + 1, usedContinue }));
+  }, [updateSession]);
 
   const openProject = useCallback(async (p: ProjectInfo) => {
     setError(null);
-    setPtyIdle(false);
     setCenterTab('terminal');
     setSelectedDoc(null);
     const prev = currentRef.current;
     setCurrentProject(p);
+    // 主行程要知道使用者在看哪個專案，才能分辨背景 session 的等待通知。
+    pm.pty.focus(p.path);
     try {
       const info = await pm.openProject(p.path);
       // A newer open won while we were awaiting — drop this one entirely.
@@ -136,14 +171,28 @@ export default function App() {
       // The git log is another await, and another chance to be superseded.
       if (currentRef.current?.path !== p.path) return;
       setCommits(log);
+      // 已經有活著的 session：只是切回去看，不重開。
+      if (sessionsRef.current[p.path]?.status === 'running') return;
       await launch(info, true);
     } catch (e) {
       // A superseded open must not clobber the winner's project or banner.
       if (currentRef.current?.path !== p.path) return;
       setCurrentProject(prev);
+      pm.pty.focus(prev?.path ?? null);
       setError(errorMessage(e));
     }
   }, [launch, setCurrentProject]);
+
+  // 關閉一個 session；目前專案留著 exited 狀態（覆蓋層可重新啟動），其他直接移除。
+  const closeSession = useCallback(async (path: string, silent = false) => {
+    await pm.pty.kill(path);
+    if (currentRef.current?.path === path) {
+      updateSession(path, (prev) => ({ status: 'exited', idle: false, launchSeq: prev?.launchSeq ?? 0, usedContinue: prev?.usedContinue ?? false }));
+    } else {
+      updateSession(path, null);
+    }
+    if (!silent) pushNotice(`已關閉 ${basename(path)} 的 session`);
+  }, [updateSession, pushNotice]);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,21 +222,24 @@ export default function App() {
     const offGit = pm.onGitChanged((c) => { setCommits(c); setGitRevision((n) => n + 1); });
     const offDocs = pm.onDocsChanged(() => setDocsRevision((n) => n + 1));
     // idle 是狀態不是邊緣事件：同一個值可能連送兩次，直接覆寫即可。
-    const offIdle = pm.pty.onIdle((idle) => setPtyIdle(idle));
-    const offExit = pm.pty.onExit((code) => {
-      setPtyIdle(false);
-      const l = launchRef.current;
-      const cur = currentRef.current;
+    // 沒有 session 的路徑（已關閉）忽略。
+    const offIdle = pm.pty.onIdle((path, idle) => {
+      updateSession(path, (prev) => (prev ? { ...prev, idle } : null));
+    });
+    const offExit = pm.pty.onExit((path, code) => {
+      const s = sessionsRef.current[path];
+      if (!s) return;
       // A --continue launch that fails always gets exactly one retry without
-      // it: the retry has usedContinue=false, so this cannot loop.
-      if (l && cur && l.usedContinue && code !== 0) {
-        void launch(cur, false);
-        return;
+      // it: the retry has usedContinue=false, so this cannot loop. 重試是
+      // 逐 session 的，背景專案掛掉不會影響目前這個。
+      if (s.usedContinue && code !== 0) {
+        const info = currentRef.current?.path === path ? currentRef.current : projectsRef.current.find((x) => x.path === path);
+        if (info) { void launch(info, false); return; }
       }
-      setPtyStatus('exited');
+      updateSession(path, { ...s, status: 'exited', idle: false });
     });
     return () => { offState(); offGit(); offDocs(); offIdle(); offExit(); };
-  }, [launch, setCurrentProject, noteStageChange]);
+  }, [launch, setCurrentProject, noteStageChange, updateSession]);
 
   const handleNew = async (name: string) => {
     setDialogBusy(true); setDialogError(null);
@@ -231,7 +283,7 @@ export default function App() {
     setFocusSeq((n) => n + 1);
   }, []);
 
-  // 改根目錄要先關掉目前專案（結束 Claude Code session）並重讀清單，才寫其他設定：
+  // 改根目錄要先關掉所有 session 並重讀清單，才寫其他設定：
   // 換根目錄已經生效，之後的 updateConfig 失敗時畫面仍要跟主行程一致。
   const saveSettings = async ({ root, patch }: SettingsSubmit) => {
     if (!config) return;
@@ -239,12 +291,12 @@ export default function App() {
     try {
       if (root !== config.root) {
         setConfig(await pm.setRoot(root));
-        await pm.pty.kill();
-        setPtyStatus('idle'); setPtyIdle(false);
+        for (const path of Object.keys(sessionsRef.current)) await pm.pty.kill(path);
+        sessionsRef.current = {};
+        setSessions({});
+        pm.pty.focus(null);
         setCurrentProject(null); setCommits([]);
         setCenterTab('terminal'); setSelectedDoc(null);
-        // 換專案就是換 session：遞增 launchSeq 讓終端機清掉上一個專案的畫面。
-        setLaunchSeq((n) => n + 1);
         await refreshProjects();
       }
       const cfg = await pm.updateConfig(patch);
@@ -279,12 +331,33 @@ export default function App() {
     });
   };
 
+  const currentSession = current ? sessions[current.path] : undefined;
+  const ptyStatus: PtyStatus = currentSession?.status ?? 'idle';
+  const ptyIdle = currentSession?.idle ?? false;
+  const livePaths = new Set(Object.entries(sessions).filter(([, s]) => s.status === 'running').map(([path]) => path));
+  const waitingPaths = new Set(Object.entries(sessions).filter(([, s]) => s.status === 'running' && s.idle).map(([path]) => path));
+  const liveSessions = [...livePaths].map((path) => ({ path, name: projects.find((p) => p.path === path)?.name ?? basename(path) }));
+
   // 只在 Claude Code 停在提示符時送，避免打斷正在輸出的回應。
   // 指令與 Enter 分兩次寫入，否則整段會被當成貼上而不送出。
   const runStage = (stage: StageName) => {
-    if (ptyStatus !== 'running' || !ptyIdle) return;
-    pm.pty.write(`/stage-${stage}`);
-    window.setTimeout(() => { pm.pty.write('\r'); }, ENTER_DELAY_MS);
+    const path = current?.path;
+    if (!path || ptyStatus !== 'running' || !ptyIdle) return;
+    pm.pty.write(path, `/stage-${stage}`);
+    window.setTimeout(() => { pm.pty.write(path, '\r'); }, ENTER_DELAY_MS);
+  };
+
+  // 上限對話框：關掉選中的 session（不另外提示），再把等著的專案開起來。
+  const handleLimitClose = async (path: string) => {
+    setLimitBusy(true);
+    try {
+      await closeSession(path, true);
+      const pending = limitPending;
+      setLimitPending(null);
+      if (pending) await launch(pending, true);
+    } finally {
+      setLimitBusy(false);
+    }
   };
 
   if (screen === 'loading') return <div className="center muted">載入中…</div>;
@@ -298,9 +371,9 @@ export default function App() {
           <button className="gear" aria-label="設定" title="設定" onClick={() => { setSettingsError(null); setSettingsOpen(true); }}>⚙</button>
         </div>
         <ProjectList projects={projects} currentPath={current?.path ?? null}
-          waitingPath={ptyIdle && ptyStatus === 'running' ? current?.path ?? null : null}
+          livePaths={livePaths} waitingPaths={waitingPaths}
           onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }}
-          onInsights={() => setCenterTab('insights')} />
+          onInsights={() => setCenterTab('insights')} onCloseSession={setCloseReq} />
       </aside>
       <header className="stage">
         {error && <div className="error">{error}</div>}
@@ -308,7 +381,8 @@ export default function App() {
           onRebuild={handleRebuild} onOpenDoc={handleOpenDoc} onRunStage={runStage} />
       </header>
       <CenterPane tab={centerTab} onTab={setCenterTab}
-        status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }}
+        sessions={sessions} currentPath={current?.path ?? null}
+        onRestart={(path) => { const info = projects.find((x) => x.path === path) ?? current; if (info) void launch(info, true); }}
         path={current?.path ?? null}
         stageDocs={current?.state && current.state.stage !== 'done' ? current.state.stages[current.state.stage].docs ?? [] : []}
         selectedDoc={selectedDoc} onSelectDoc={setSelectedDoc} docsRevision={docsRevision} onNotice={pushNotice}
@@ -319,6 +393,17 @@ export default function App() {
           revealCommit={revealCommit} />
       </aside>
       <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
+      <ConfirmDialog
+        request={closeReq ? {
+          title: '關閉 session',
+          description: `結束 ${closeReq.name} 的 Claude Code session？之後可用「重新啟動」以 --continue 接續。`,
+          command: `pty:kill ${closeReq.name}`,
+          danger: false,
+        } : null}
+        onConfirm={() => { const p = closeReq; setCloseReq(null); if (p) void closeSession(p.path); }}
+        onCancel={() => setCloseReq(null)} />
+      <SessionLimitDialog pending={limitPending} live={liveSessions} busy={limitBusy}
+        onClose={(path) => { void handleLimitClose(path); }} onCancel={() => setLimitPending(null)} />
       {config && (
         <SettingsDialog open={settingsOpen} config={config} busy={settingsBusy} error={settingsError}
           onPickFolder={() => pm.pickFolder()} onSave={(s) => { void saveSettings(s); }} onCancel={closeSettings} />

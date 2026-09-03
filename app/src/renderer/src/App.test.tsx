@@ -1,14 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import type { GitCommit, PmApi, ProjectInfo, StageName } from '../../shared/types';
 import { DEFAULT_SETTINGS } from '../../shared/config-schema';
 
 const CFG = { root: 'C:\\P', lastProject: null as string | null, recent: [] as string[], ...DEFAULT_SETTINGS };
 
+type MockSession = { status: string; idle: boolean; launchSeq: number };
+
+// TerminalHost 的替身：data-status / data-launch 反映目前專案的 session，
+// 每個 session 另外渲染一個 data-session，讓測試看得到背景 session。
 vi.mock('./components/Terminal', () => ({
-  Terminal: ({ status, launchSeq, onRestart, visible = true }: { status: string; launchSeq: number; onRestart: () => void; visible?: boolean }) => (
-    <div data-testid="terminal" data-status={status} data-launch={launchSeq} hidden={!visible}><button onClick={onRestart}>重新啟動</button></div>
-  ),
+  TerminalHost: ({ sessions, currentPath, onRestart, visible = true }: { sessions: Record<string, MockSession>; currentPath: string | null; onRestart: (path: string) => void; visible?: boolean }) => {
+    const cur = currentPath ? sessions[currentPath] : undefined;
+    return (
+      <div data-testid="terminal" data-current={currentPath ?? ''} data-status={cur?.status ?? 'idle'} data-launch={cur?.launchSeq ?? 0} hidden={!visible}>
+        {Object.entries(sessions).map(([p, s]) => <div key={p} data-testid="session" data-session={`${p}:${s.status}:${s.launchSeq}`} />)}
+        <button onClick={() => { if (currentPath) onRestart(currentPath); }}>重新啟動</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('./components/insights/InsightsView', () => ({
@@ -323,14 +333,15 @@ describe('App', () => {
     expect(btn).toBeEnabled();
     expect(screen.getByText('● 等待回覆')).toBeInTheDocument();
 
-    // 指令與 Enter 必須分開寫入，合成一段會被 Claude Code 當成貼上而不送出。
+    // 指令與 Enter 必須分開寫入，合成一段會被 Claude Code 當成貼上而不送出；
+    // 兩次都要帶目前專案的路徑。
     try {
       vi.useFakeTimers();
       fireEvent.click(btn);
-      expect(api.pty.write).toHaveBeenNthCalledWith(1, '/stage-design');
+      expect(api.pty.write).toHaveBeenNthCalledWith(1, 'C:\\P\\alpha', '/stage-design');
       expect(api.pty.write).toHaveBeenCalledTimes(1);
       act(() => { vi.advanceTimersByTime(ENTER_DELAY_MS); });
-      expect(api.pty.write).toHaveBeenNthCalledWith(2, '\r');
+      expect(api.pty.write).toHaveBeenNthCalledWith(2, 'C:\\P\\alpha', '\r');
     } finally {
       vi.useRealTimers();
     }
@@ -497,17 +508,18 @@ describe('App', () => {
     await renderApp(api);
     fireEvent.click(await screen.findByText('alpha'));
     await screen.findAllByText(/環境搭建/);   // StagePanel 同時有標題與按鈕，只要等專案開好
-    const seq = Number(screen.getByTestId('terminal').getAttribute('data-launch'));
+    await waitFor(() => expect(screen.getAllByTestId('session')).toHaveLength(1));
     fireEvent.click(screen.getByRole('button', { name: '設定' }));
     fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
     await waitFor(() => expect(api.setRoot).toHaveBeenCalledWith('D:\\Other'));
-    await waitFor(() => expect(api.pty.kill).toHaveBeenCalled());
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\alpha'));
     await waitFor(() => expect(api.listProjects).toHaveBeenCalledTimes(2));
     expect(screen.getByText('選擇或建立一個專案')).toBeInTheDocument();
     expect(screen.getByText('D:\\Other')).toBeInTheDocument();
-    // 換根目錄就是換 session：終端機要收到新的 launchSeq 才會清掉舊專案的畫面
-    expect(Number(screen.getByTestId('terminal').getAttribute('data-launch'))).toBeGreaterThan(seq);
+    // 換根目錄就是換掉所有 session：終端機不該再留著舊專案的實例
+    expect(screen.queryAllByTestId('session')).toHaveLength(0);
+    expect(api.pty.focus).toHaveBeenLastCalledWith(null);
   });
 
   it('keeps the new root when updateConfig fails after setRoot', async () => {
@@ -562,5 +574,199 @@ describe('App', () => {
     await waitFor(() => expect(api.openProject).toHaveBeenLastCalledWith('C:\\P\\beta'));
     await waitFor(() => expect(screen.getByText('abc1234', { selector: '.reveal' })).toBeInTheDocument());
     expect(screen.getByText('beta').closest('.project')).toHaveClass('active');
+  });
+
+  it('switching projects keeps the first session alive and focuses the new one', async () => {
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (p: string) => (p.endsWith('alpha') ? alpha : beta)),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.anything()));
+    fireEvent.click(screen.getByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    expect(api.pty.kill).not.toHaveBeenCalled();
+    expect(api.pty.focus).toHaveBeenLastCalledWith('C:\\P\\beta');
+    expect(screen.getByText('alpha').closest('.project')).toHaveTextContent('● 執行中');
+
+    fireEvent.click(screen.getByText('alpha'));
+    await waitFor(() => expect(api.pty.focus).toHaveBeenLastCalledWith('C:\\P\\alpha'));
+    await waitFor(() => expect(screen.getByTestId('terminal')).toHaveAttribute('data-current', 'C:\\P\\alpha'));
+    expect(api.pty.start).toHaveBeenCalledTimes(2);   // 切回去不重啟
+    expect(screen.getAllByTestId('session')).toHaveLength(2);
+  });
+
+  it('idle for a background session shows its waiting pill without enabling the current stage button', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (p: string) => (p.endsWith('alpha') ? alpha : beta)),
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    fireEvent.click(screen.getByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.anything()));
+
+    act(() => { for (const cb of listeners.idle) cb('C:\\P\\beta', true); });
+    expect(screen.getByText('beta').closest('.project')).toHaveTextContent('● 等待回覆');
+    expect(screen.getByText('alpha').closest('.project')).toHaveTextContent('● 執行中');
+    // 背景專案在等回覆，不代表目前專案可以送指令
+    expect(screen.getByRole('button', { name: /產品設計/ })).toBeDisabled();
+
+    act(() => { for (const cb of listeners.idle) cb('C:\\P\\alpha', true); });
+    expect(screen.getByRole('button', { name: /產品設計/ })).toBeEnabled();
+  });
+
+  it('session limit: dialog lists live sessions and closing one launches the pending project', async () => {
+    const list = ['p1', 'p2', 'p3', 'p4', 'p5'].map((n) => projectAt(n, 'design'));
+    const live = new Set<string>();
+    const api = mockApi({
+      listProjects: vi.fn(async () => list),
+      openProject: vi.fn(async (path: string) => list.find((p) => p.path === path)!),
+    });
+    // 主行程的上限行為：已有 4 個 session 時，開第 5 個會被拒絕
+    api.pty.start = vi.fn(async (path: string) => {
+      if (!live.has(path) && live.size >= 4) throw new Error("Error invoking remote method 'pty:start': Error: too many sessions");
+      live.add(path);
+    });
+    api.pty.kill = vi.fn(async (path: string) => { live.delete(path); });
+    await renderApp(api);
+    for (const n of ['p1', 'p2', 'p3', 'p4']) {
+      fireEvent.click(await screen.findByText(n));
+      await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith(`C:\\P\\${n}`, expect.anything()));
+    }
+    fireEvent.click(screen.getByText('p5'));
+    const dialog = await screen.findByRole('dialog', { name: 'session 上限' });
+    expect(within(dialog).getAllByRole('button', { name: '關閉' })).toHaveLength(4);
+
+    const row = within(dialog).getByText('p1', { selector: '.name' }).closest('.session-row')!;
+    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: '關閉' }));
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\p1'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenLastCalledWith('C:\\P\\p5', expect.anything()));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'session 上限' })).toBeNull());
+    expect(screen.getByText('p1').closest('.project')).not.toHaveTextContent('● 執行中');
+    expect(screen.getByText('p5').closest('.project')).toHaveTextContent('● 執行中');
+  });
+
+  it('closing the current session shows the exited overlay; closing a background one removes its pill', async () => {
+    mockGitPanel();
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (p: string) => (p.endsWith('alpha') ? alpha : beta)),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    fireEvent.click(screen.getByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.anything()));
+
+    // 背景專案：關掉之後連 xterm 實例都不留
+    const betaRow = screen.getByText('beta').closest('.project') as HTMLElement;
+    fireEvent.click(within(betaRow).getByRole('button', { name: '關閉 session' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\beta'));
+    await waitFor(() => expect(screen.getAllByTestId('session')).toHaveLength(1));
+    expect(screen.getByText('beta').closest('.project')).not.toHaveTextContent('● 執行中');
+    expect(screen.getByText('已關閉 beta 的 session')).toHaveClass('notice');
+    expect(screen.getByText('alpha').closest('.project')).toHaveClass('active');
+
+    // 目前專案：留著 session（xterm 內容還在），只切成 exited 讓覆蓋層出現
+    const alphaRow = screen.getByText('alpha').closest('.project') as HTMLElement;
+    fireEvent.click(within(alphaRow).getByRole('button', { name: '關閉 session' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\alpha'));
+    await waitFor(() => expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'exited'));
+    expect(screen.getAllByTestId('session')).toHaveLength(1);
+    expect(screen.getByText('alpha').closest('.project')).not.toHaveTextContent('● 執行中');
+  });
+
+  it('cancelling the close dialog keeps the session running', async () => {
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({ listProjects: vi.fn(async () => [alpha]), openProject: vi.fn(async () => alpha) });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.anything()));
+    const row = screen.getByText('alpha').closest('.project') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: '關閉 session' }));
+    fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+    expect(api.pty.kill).not.toHaveBeenCalled();
+    expect(screen.getByText('alpha').closest('.project')).toHaveTextContent('● 執行中');
+  });
+
+  it('--continue retry applies per session', async () => {
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (p: string) => (p.endsWith('alpha') ? alpha : beta)),
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.objectContaining({ continue: true })));
+    fireEvent.click(screen.getByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.objectContaining({ continue: true })));
+
+    // 背景 session 的 --continue 失敗只重試它自己一次
+    await act(async () => { listeners.exit.forEach((cb) => cb('C:\\P\\beta', 1)); });
+    await waitFor(() => expect(api.pty.start).toHaveBeenLastCalledWith('C:\\P\\beta', expect.objectContaining({ continue: false })));
+    expect(api.pty.start).toHaveBeenCalledTimes(3);
+    await act(async () => { listeners.exit.forEach((cb) => cb('C:\\P\\beta', 1)); });
+    expect(api.pty.start).toHaveBeenCalledTimes(3);
+    expect(screen.getByText('beta').closest('.project')).not.toHaveTextContent('● 執行中');
+    // 目前專案不受影響
+    expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'running');
+  });
+
+  it('changing root kills every session', async () => {
+    let root = CFG.root;
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (p: string) => (p.endsWith('alpha') ? alpha : beta)),
+      setRoot: vi.fn(async (r: string) => { root = r; return { ...CFG, root }; }),
+      updateConfig: vi.fn(async (patch) => ({ ...CFG, root, ...patch })),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\alpha', expect.anything()));
+    fireEvent.click(screen.getByText('beta'));
+    await waitFor(() => expect(screen.getAllByTestId('session')).toHaveLength(2));
+
+    fireEvent.click(screen.getByRole('button', { name: '設定' }));
+    fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\alpha'));
+    expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\beta');
+    await waitFor(() => expect(screen.queryAllByTestId('session')).toHaveLength(0));
+  });
+
+  it('kills sessions whose project is gone after a refresh', async () => {
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'design');
+    let listed = [alpha, beta];
+    const api = mockApi({
+      listProjects: vi.fn(async () => listed),
+      openProject: vi.fn(async (p: string) => (p.endsWith('alpha') ? alpha : beta)),
+      createProject: vi.fn(async (name: string) => project(name)),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('beta'));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.anything()));
+    listed = [alpha];   // beta 被刪掉了
+    fireEvent.click(screen.getByRole('button', { name: '+ 新專案' }));
+    fireEvent.change(screen.getByLabelText('專案名稱'), { target: { value: 'gamma' } });
+    fireEvent.click(screen.getByRole('button', { name: '建立' }));
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\beta'));
   });
 });
