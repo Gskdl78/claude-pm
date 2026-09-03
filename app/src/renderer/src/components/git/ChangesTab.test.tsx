@@ -1,7 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ChangesTab } from './ChangesTab';
+import { ChangesTab, type ChangesTabProps } from './ChangesTab';
 import type { GitFileChange, GitStatus } from '../../../../shared/types';
+
+type HostProps = Omit<ChangesTabProps, 'message' | 'amend' | 'onMessageChange' | 'onAmendChange'>;
+
+/** commit 輸入由 GitPanel 保管，測試用這個小殼提供狀態。 */
+function Host(props: HostProps) {
+  const [message, setMessage] = useState('');
+  const [amend, setAmend] = useState(false);
+  return <ChangesTab {...props} message={message} amend={amend} onMessageChange={setMessage} onAmendChange={setAmend} />;
+}
 
 const file = (over: Partial<GitFileChange>): GitFileChange => ({
   path: 'a.txt', index: ' ', work: 'M', staged: false, unstaged: true, untracked: false, conflicted: false, ...over,
@@ -24,7 +34,7 @@ describe('ChangesTab', () => {
       file({ path: 'c.txt', index: 'U', work: 'U', unstaged: false, conflicted: true }),
     ];
     const cb = callbacks();
-    render(<ChangesTab status={status(files)} busy={false} commitSeq={0} {...cb} />);
+    render(<Host status={status(files)} busy={false} {...cb} />);
     expect(screen.getByText('衝突（1）')).toBeInTheDocument();
     expect(screen.getByText('已暫存（1）')).toBeInTheDocument();
     expect(screen.getByText('未暫存（2）')).toBeInTheDocument();
@@ -53,7 +63,7 @@ describe('ChangesTab', () => {
 
   it('shows empty hints, disables bulk buttons and forwards commits', () => {
     const cb = callbacks();
-    render(<ChangesTab status={status([])} busy={false} commitSeq={0} {...cb} />);
+    render(<Host status={status([])} busy={false} {...cb} />);
     expect(screen.queryByText(/衝突（/)).not.toBeInTheDocument();
     expect(screen.getByText('沒有已暫存的變更')).toBeInTheDocument();
     expect(screen.getByText('工作目錄沒有變更')).toBeInTheDocument();
@@ -65,11 +75,16 @@ describe('ChangesTab', () => {
     expect(cb.onCommit).toHaveBeenCalledWith('msg', true);
   });
 
-  it('remounts the commit box when commitSeq changes', () => {
+  // 訊息由上層保管：ChangesTab 只負責傳遞，清空與否也由上層決定
+  it('mirrors the commit message handed down and clears it when the owner does', () => {
     const cb = callbacks();
-    const { rerender } = render(<ChangesTab status={status([])} busy={false} commitSeq={0} {...cb} />);
-    fireEvent.change(screen.getByLabelText('commit 訊息'), { target: { value: 'msg' } });
-    rerender(<ChangesTab status={status([])} busy={false} commitSeq={1} {...cb} />);
+    const onMessageChange = vi.fn();
+    const props = { status: status([]), busy: false, amend: false, onMessageChange, onAmendChange: vi.fn(), ...cb };
+    const { rerender } = render(<ChangesTab {...props} message="msg" />);
+    expect(screen.getByLabelText('commit 訊息')).toHaveValue('msg');
+    fireEvent.change(screen.getByLabelText('commit 訊息'), { target: { value: 'msg2' } });
+    expect(onMessageChange).toHaveBeenCalledWith('msg2');
+    rerender(<ChangesTab {...props} message="" />);
     expect(screen.getByLabelText('commit 訊息')).toHaveValue('');
   });
 });

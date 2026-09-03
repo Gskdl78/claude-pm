@@ -4,8 +4,11 @@ import { CommitBox } from './CommitBox';
 export interface ChangesTabProps {
   status: GitStatus;
   busy: boolean;
-  /** 提交成功後遞增；CommitBox 以它為 key 重掛，清空訊息 */
-  commitSeq: number;
+  /** commit 輸入由 GitPanel 保管，切換分頁時不會遺失 */
+  message: string;
+  amend: boolean;
+  onMessageChange: (message: string) => void;
+  onAmendChange: (amend: boolean) => void;
   onStage: (file: string) => void;
   onUnstage: (file: string) => void;
   onStageAll: () => void;
@@ -87,7 +90,9 @@ export function ChangesTab(p: ChangesTabProps) {
             action={{ label: '加入暫存', symbol: '+', onClick: p.onStage }} onDiscard={p.onDiscard} />
         ))}
       </section>
-      <CommitBox key={p.commitSeq} busy={busy} stagedCount={staged.length} noCommits={status.noCommits} onCommit={p.onCommit} />
+      <CommitBox busy={busy} stagedCount={staged.length} noCommits={status.noCommits}
+        message={p.message} amend={p.amend} onMessageChange={p.onMessageChange} onAmendChange={p.onAmendChange}
+        onCommit={p.onCommit} />
     </div>
   );
 }

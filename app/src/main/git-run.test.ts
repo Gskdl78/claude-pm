@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+// readFileSync 被包成 spy，才能驗大檔沒有被整份讀進記憶體；其餘 fs 全部用真的
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>();
+  return { ...real, default: real, readFileSync: vi.fn(real.readFileSync) };
+});
+import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -138,5 +143,25 @@ describe('getDiff / showCommit', () => {
     expect(shown).toMatch(/a\.txt \|/);
     expect(shown).toMatch(/\+one/);
     await expect(showCommit(dir, 'deadbeef')).rejects.toThrow();
+  });
+
+  it('caps how much of a huge untracked file is read, and refuses symlinks and .git paths', async () => {
+    const dir = repo();
+    const huge = 2 * 1024 * 1024;
+    writeFileSync(join(dir, 'huge.txt'), 'y'.repeat(huge));
+    vi.mocked(readFileSync).mockClear();
+    const out = await getDiff(dir, 'huge.txt', 'untracked');
+    expect(out.endsWith(TRUNCATED)).toBe(true);
+    // 只讀了開頭約 512 KB：結果長度與檔案大小無關，而且沒有整份 readFileSync
+    expect(out.length).toBe(MAX_TEXT + TRUNCATED.length);
+    expect(vi.mocked(readFileSync)).not.toHaveBeenCalled();
+
+    expect(await getDiff(dir, '.git/config', 'untracked')).toBe('（無法讀取檔案）');
+    expect(await getDiff(dir, '.git\\config', 'untracked')).toBe('（無法讀取檔案）');
+
+    // Windows 沒有開發者模式時無法建立 symlink，建得起來才驗
+    let linked = false;
+    try { symlinkSync(join(dir, 'huge.txt'), join(dir, 'link.txt')); linked = true; } catch { linked = false; }
+    if (linked) expect(await getDiff(dir, 'link.txt', 'untracked')).toBe('（無法讀取檔案）');
   });
 });

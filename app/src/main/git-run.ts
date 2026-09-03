@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GitBranches, GitDiffMode, GitFileChange, GitResult, GitStatus } from '../shared/types';
 import { formatGitCommand } from '../shared/git-actions';
@@ -136,16 +136,37 @@ function clip(text: string): string {
   return text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + TRUNCATED : text;
 }
 
-/** 未追蹤檔沒有 diff 可看，改顯示內容；路徑已由 handler 驗證為 repo 內相對路徑。 */
+const UNREADABLE = '（無法讀取檔案）';
+
+/** 只讀開頭 MAX_TEXT + 1 個位元組：多的那一個是給 clip 判斷「有沒有被截斷」用的。 */
+function readHead(full: string, size: number): Buffer {
+  if (size <= MAX_TEXT) return readFileSync(full);
+  const buf = Buffer.alloc(MAX_TEXT + 1);
+  const fd = openSync(full, 'r');
+  try {
+    return buf.subarray(0, readSync(fd, buf, 0, buf.length, 0));
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * 未追蹤檔沒有 diff 可看，改顯示內容；路徑已由 handler 驗證為 repo 內相對路徑。
+ * 大檔只讀開頭，不整份載入記憶體；symlink 與 .git 內的檔案一律不讀。
+ */
 function readUntracked(dir: string, file: string): string {
   const full = join(dir, file);
   try {
-    if (statSync(full).isDirectory()) return '（新資料夾）';
-    const buf = readFileSync(full);
+    if (file.split(/[\\/]/)[0]?.toLowerCase() === '.git') return UNREADABLE;
+    const st = lstatSync(full);
+    if (st.isSymbolicLink()) return UNREADABLE;
+    if (st.isDirectory()) return '（新資料夾）';
+    if (!st.isFile()) return UNREADABLE;
+    const buf = readHead(full, st.size);
     if (buf.subarray(0, 8000).includes(0)) return '（二進位檔案）';
     return clip(`（新檔案）\n${buf.toString('utf8')}`);
   } catch {
-    return '（無法讀取檔案）';
+    return UNREADABLE;
   }
 }
 

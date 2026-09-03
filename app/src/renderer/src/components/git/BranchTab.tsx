@@ -6,6 +6,9 @@ interface Props {
   status: GitStatus;
   branches: GitBranches;
   busy: boolean;
+  /** 新分支名稱由 GitPanel 保管，切換分頁時不會遺失 */
+  name: string;
+  onNameChange: (name: string) => void;
   onSwitch: (branch: string) => void;
   onCreate: (branch: string) => void;
   onMerge: (branch: string) => void;
@@ -13,17 +16,16 @@ interface Props {
 
 const NAME_HINT = '名稱不合法：不可含空白、..、~ ^ : ? * [ \\，不可以 - 或 . 開頭';
 
-export function BranchTab({ status, branches, busy, onSwitch, onCreate, onMerge }: Props) {
+export function BranchTab({ status, branches, busy, name, onNameChange, onSwitch, onCreate, onMerge }: Props) {
   const others = branches.all.filter((b) => b !== status.branch);
   const [target, setTarget] = useState('');
   const [source, setSource] = useState('');
-  const [name, setName] = useState('');
   // 下拉的選項會隨狀態變，選過的值不在清單裡時退回第一個
   const switchTo = others.includes(target) ? target : others[0] ?? '';
   const mergeFrom = others.includes(source) ? source : others[0] ?? '';
   const exists = branches.all.includes(name);
   const nameValid = BRANCH_RE.test(name) && !exists;
-  const create = () => { if (nameValid) { onCreate(name); setName(''); } };
+  const create = () => { if (nameValid) { onCreate(name); onNameChange(''); } };
   return (
     <div className="branch-tab">
       <div className="branch-current">
@@ -43,7 +45,7 @@ export function BranchTab({ status, branches, busy, onSwitch, onCreate, onMerge 
       <section>
         <label htmlFor="branch-new">新分支名稱</label>
         <div className="row">
-          <input id="branch-new" value={name} disabled={busy} placeholder="例如 feature/login" onChange={(e) => setName(e.target.value)}
+          <input id="branch-new" value={name} disabled={busy} placeholder="例如 feature/login" onChange={(e) => onNameChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') create(); }} />
           <button type="button" disabled={busy || !nameValid} onClick={create}>新增</button>
         </div>

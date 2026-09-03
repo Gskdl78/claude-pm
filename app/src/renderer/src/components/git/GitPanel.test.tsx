@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import type { GitBranches, GitResult, GitStatus } from '../../../../shared/types';
 
 const git = vi.hoisted(() => ({
@@ -10,6 +10,7 @@ vi.mock('../../api', () => ({ pm: { git } }));
 import { GitPanel } from './GitPanel';
 
 const P = 'C:\\P\\alpha';
+const P2 = 'C:\\P\\beta';
 const st = (over: Partial<GitStatus> = {}): GitStatus => ({
   isRepo: true, branch: 'main', detached: false, noCommits: false, upstream: 'origin/main',
   ahead: 0, behind: 0, hasRemote: true, merging: false, files: [], ...over,
@@ -116,6 +117,66 @@ describe('GitPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '關閉' }));
     fireEvent.click(screen.getByRole('tab', { name: '分支' }));
     expect(screen.getByLabelText('切換到')).toBeInTheDocument();
+  });
+
+  it('shows the error instead of an endless loading message when the first status read fails', async () => {
+    git.status.mockRejectedValue(new Error('boom'));
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('讀取 git 狀態失敗：boom');
+    expect(screen.queryByText('讀取 git 狀態…')).not.toBeInTheDocument();
+  });
+
+  it('logs a repeated status failure only once', async () => {
+    git.status.mockRejectedValue(new Error('boom'));
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    await screen.findByRole('alert');
+    const first = git.status.mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await waitFor(() => expect(git.status.mock.calls.length).toBeGreaterThan(first));
+    const out = screen.getByRole('log', { name: '輸出' });
+    expect(within(out).getAllByText('讀取 git 狀態失敗：boom')).toHaveLength(1);
+  });
+
+  it('drops an action result when the project changed while it was running', async () => {
+    let release!: (r: GitResult) => void;
+    git.run.mockImplementationOnce(() => new Promise<GitResult>((res) => { release = res; }));
+    const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: '推送' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'push' }));
+
+    rerender(<GitPanel path={P2} commits={[]} revision={0} />);
+    await waitFor(() => expect(git.status).toHaveBeenCalledWith(P2));
+    git.status.mockClear();
+    await act(async () => { release(ok('git push -u origin HEAD')); });
+
+    const out = screen.getByRole('log', { name: '輸出' });
+    expect(within(out).getByText('尚未執行任何操作')).toBeInTheDocument();
+    expect(within(out).queryByText('> git push -u origin HEAD')).not.toBeInTheDocument();
+    expect(within(out).queryByText('完成 ✓')).not.toBeInTheDocument();
+    expect(git.status).not.toHaveBeenCalledWith(P);
+  });
+
+  it('keeps typed commit message, amend and new branch name across tab switches, and clears them on project switch', async () => {
+    git.status.mockResolvedValue(st({ files: [stagedFile] }));
+    const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.change(await screen.findByLabelText('commit 訊息'), { target: { value: 'feat: keep me' } });
+    fireEvent.click(screen.getByLabelText('修改上一次提交'));
+
+    fireEvent.click(screen.getByRole('tab', { name: '分支' }));
+    fireEvent.change(screen.getByLabelText('新分支名稱'), { target: { value: 'feature/keep' } });
+    fireEvent.click(screen.getByRole('tab', { name: /^變更/ }));
+    expect(screen.getByLabelText('commit 訊息')).toHaveValue('feat: keep me');
+    expect(screen.getByLabelText('修改上一次提交')).toBeChecked();
+    fireEvent.click(screen.getByRole('tab', { name: '分支' }));
+    expect(screen.getByLabelText('新分支名稱')).toHaveValue('feature/keep');
+
+    rerender(<GitPanel path={P2} commits={[]} revision={0} />);
+    await waitFor(() => expect(git.status).toHaveBeenCalledWith(P2));
+    expect(await screen.findByLabelText('commit 訊息')).toHaveValue('');
+    expect(screen.getByLabelText('修改上一次提交')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('tab', { name: '分支' }));
+    expect(screen.getByLabelText('新分支名稱')).toHaveValue('');
   });
 
   it('re-reads status when revision changes', async () => {

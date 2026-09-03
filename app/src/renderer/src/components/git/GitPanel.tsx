@@ -35,14 +35,19 @@ interface Viewer { title: string; text: string }
 
 export function GitPanel({ path, commits, revision }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [branches, setBranches] = useState<GitBranches>(EMPTY_BRANCHES);
   const [tab, setTab] = useState<Tab>('changes');
   const [busy, setBusy] = useState(false);
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
   const [viewer, setViewer] = useState<Viewer | null>(null);
-  const [commitSeq, setCommitSeq] = useState(0);
+  // 分頁切換會卸載另一個分頁，輸入必須留在這裡才不會被清掉
+  const [message, setMessage] = useState('');
+  const [amend, setAmend] = useState(false);
+  const [newBranch, setNewBranch] = useState('');
   const seqRef = useRef(0);
+  const statusErrorRef = useRef<string | null>(null);
   const pathRef = useRef(path);
   const logId = useRef(0);
   pathRef.current = path;
@@ -62,17 +67,24 @@ export function GitPanel({ path, commits, revision }: Props) {
       const br = st.isRepo ? await pm.git.branches(path) : EMPTY_BRANCHES;
       // 被更新的 refresh 或專案切換取代的結果一律丟棄
       if (seq !== seqRef.current || pathRef.current !== path) return;
+      statusErrorRef.current = null;
+      setStatusError(null);
       setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(st) ? prev : st));
       setBranches((prev) => (JSON.stringify(prev) === JSON.stringify(br) ? prev : br));
     } catch (e) {
       if (seq !== seqRef.current || pathRef.current !== path) return;
-      log('error', `讀取 git 狀態失敗：${errorMessage(e)}`);
+      const text = `讀取 git 狀態失敗：${errorMessage(e)}`;
+      setStatusError(text);
+      // 每 3 秒輪詢一次，同一個錯誤只記一次，不然輸出區會被洗版
+      if (statusErrorRef.current !== text) { statusErrorRef.current = text; log('error', text); }
     }
   }, [path, log]);
 
-  // 專案切換：輸出、對話框、分頁回到初始
+  // 專案切換：輸出、對話框、分頁與輸入回到初始
   useEffect(() => {
     setEntries([]); setPending(null); setViewer(null); setTab('changes'); setStatus(null);
+    setStatusError(null); statusErrorRef.current = null;
+    setMessage(''); setAmend(false); setNewBranch('');
   }, [path]);
 
   // 專案切換與 watcher 事件（revision）→ 立即重讀
@@ -91,19 +103,23 @@ export function GitPanel({ path, commits, revision }: Props) {
     setBusy(true);
     try {
       const r = await pm.git.run(path, action);
+      // 期間換了專案：舊專案的結果不該進新專案的輸出，也不該觸發新專案的重讀
+      if (pathRef.current !== path) return;
       log('cmd', r.command);
       if (r.ok) {
         log('ok', '完成 ✓');
-        if (action.kind === 'commit') setCommitSeq((n) => n + 1);
+        // 提交成功才清空輸入，失敗時訊息要留著讓使用者改
+        if (action.kind === 'commit') { setMessage(''); setAmend(false); }
       } else {
         const text = gitResultText(r);
         log('error', explainGitError(text) ?? '執行失敗，原始輸出如下：', text);
       }
     } catch (e) {
+      if (pathRef.current !== path) return;
       log('error', errorMessage(e));
     } finally {
       setBusy(false);
-      void refresh();
+      if (pathRef.current === path) void refresh();
     }
   }, [path, log, refresh]);
 
@@ -148,7 +164,17 @@ export function GitPanel({ path, commits, revision }: Props) {
   );
 
   if (!path) return <div className="git-panel"><div className="muted pad">選擇專案後顯示 git 狀態</div></div>;
-  if (!status) return <div className="git-panel"><div className="muted pad">讀取 git 狀態…</div></div>;
+  if (!status) {
+    return (
+      <div className="git-panel">
+        {statusError
+          ? <div className="error pad" role="alert">{statusError}</div>
+          : <div className="muted pad">讀取 git 狀態…</div>}
+        <OutputLog entries={entries} />
+        {dialogs}
+      </div>
+    );
+  }
   if (!status.isRepo) {
     return (
       <div className="git-panel">
@@ -191,7 +217,8 @@ export function GitPanel({ path, commits, revision }: Props) {
       </nav>
       <div className="git-body" role="tabpanel">
         {tab === 'changes' && (
-          <ChangesTab status={status} busy={busy} commitSeq={commitSeq}
+          <ChangesTab status={status} busy={busy}
+            message={message} amend={amend} onMessageChange={setMessage} onAmendChange={setAmend}
             onStage={(file) => request({ kind: 'stage', file })}
             onUnstage={(file) => request({ kind: 'unstage', file })}
             onStageAll={() => request({ kind: 'stageAll' })}
@@ -202,6 +229,7 @@ export function GitPanel({ path, commits, revision }: Props) {
         )}
         {tab === 'branches' && (
           <BranchTab status={status} branches={branches} busy={busy}
+            name={newBranch} onNameChange={setNewBranch}
             onSwitch={(branch) => request({ kind: 'switch', branch })}
             onCreate={(branch) => request({ kind: 'createBranch', branch })}
             onMerge={(branch) => request({ kind: 'merge', branch })} />
