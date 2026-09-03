@@ -67,8 +67,8 @@ export interface PtyStartOptions {
   rows: number;
 }
 
-/** App 要寫進右欄輸出區的一行提示（例如階段切換）；id 遞增、只增不減 */
-export interface Notice { id: number; text: string }
+/** App 要寫進右欄輸出區的一行提示（例如階段切換、清單提交結果）；id 遞增、只增不減 */
+export interface Notice { id: number; text: string; kind?: 'hint' | 'error' }
 
 // ---- git panel ----------------------------------------------------------------
 export interface GitFileChange {
@@ -142,7 +142,8 @@ export type GitAction =
   | { kind: 'tag'; name: string; hash: string | null }
   | { kind: 'deleteTag'; name: string }
   | { kind: 'abortMerge' }
-  | { kind: 'addRemote'; url: string };
+  | { kind: 'addRemote'; url: string }
+  | { kind: 'commitPaths'; message: string; paths: string[] };
 
 export interface GitApi {
   status(path: string): Promise<GitStatus>;

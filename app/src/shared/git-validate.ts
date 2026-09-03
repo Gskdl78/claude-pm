@@ -31,6 +31,14 @@ export function assertRelPath(v: unknown): string {
   return p;
 }
 
+export const MAX_COMMIT_PATHS = 100;
+
+/** 1..MAX_COMMIT_PATHS 個 repo 相對路徑；每個都經 assertRelPath。 */
+export function assertRelPaths(v: unknown): string[] {
+  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_COMMIT_PATHS) throw new Error('invalid paths');
+  return v.map(assertRelPath);
+}
+
 export function assertBranch(v: unknown): string {
   const b = str(v, 'branch name');
   if (!BRANCH_RE.test(b)) throw new Error('invalid branch name');
@@ -129,6 +137,7 @@ export function validateGitAction(v: unknown): GitAction {
     case 'tag': return { kind: 'tag', name: assertTagName(a.name), hash: a.hash === null || a.hash === undefined ? null : assertHash(a.hash) };
     case 'deleteTag': return { kind: 'deleteTag', name: assertTagName(a.name) };
     case 'addRemote': return { kind: 'addRemote', url: assertRemoteUrl(a.url) };
+    case 'commitPaths': return { kind: 'commitPaths', message: assertMessage(a.message), paths: assertRelPaths(a.paths) };
     default: throw new Error('invalid action');
   }
 }

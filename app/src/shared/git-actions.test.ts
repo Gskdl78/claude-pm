@@ -108,3 +108,15 @@ describe('describeGitAction (batch 2)', () => {
     expect(describeGitAction({ kind: 'pullRebase' }, st)).toMatchObject({ title: '拉取（變基）', danger: false });
   });
 });
+
+describe('commitPaths', () => {
+  it('commits only the given paths with -- separator', () => {
+    expect(buildGitArgs({ kind: 'commitPaths', message: 'docs(verify): 更新清單', paths: ['docs/verify/checklist.md'] }, { hasHead: true }))
+      .toEqual(['commit', '-m', 'docs(verify): 更新清單', '--', 'docs/verify/checklist.md']);
+  });
+  it('describes the action without danger', () => {
+    const st = { isRepo: true, branch: 'main', detached: false, noCommits: false, upstream: null, ahead: 0, behind: 0, hasRemote: false, merging: false, files: [] };
+    const d = describeGitAction({ kind: 'commitPaths', message: 'm', paths: ['docs/a.md', 'docs/b.md'] }, st);
+    expect(d).toEqual({ title: '提交檔案', description: '只提交下列檔案的目前內容（不動其他已暫存的變更）：docs/a.md、docs/b.md。訊息：「m」。', danger: false });
+  });
+});

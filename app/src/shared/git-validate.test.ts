@@ -115,3 +115,17 @@ describe('batch-2 validators', () => {
     for (const n of ['', '-x', '.', '..', 'a b', 'a/b', 'x'.repeat(101), 'ünïcode', 3]) expect(() => assertRepoName(n)).toThrow(/invalid repo name/);
   });
 });
+
+describe('commitPaths validation', () => {
+  it('accepts a message and 1..100 relative paths, rebuilding a clean object', () => {
+    const a = validateGitAction({ kind: 'commitPaths', message: 'x', paths: ['docs/a.md'], extra: 1 });
+    expect(a).toEqual({ kind: 'commitPaths', message: 'x', paths: ['docs/a.md'] });
+  });
+  it('rejects empty, non-array, too many or malformed paths', () => {
+    expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: [] })).toThrow(/invalid paths/);
+    expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: 'docs/a.md' })).toThrow(/invalid paths/);
+    expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: ['../a'] })).toThrow(/invalid path/);
+    expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: Array(101).fill('a') })).toThrow(/invalid paths/);
+    expect(() => validateGitAction({ kind: 'commitPaths', message: ' ', paths: ['a'] })).toThrow(/invalid message/);
+  });
+});
