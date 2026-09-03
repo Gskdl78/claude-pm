@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { listProjects, readProjectInfo, createProject, initExisting, rebuildState, scaffoldArgs, NAME_RE } from './projects';
+import { execFileSync } from 'node:child_process';
+import { listProjects, readProjectInfo, createProject, initExisting, rebuildState, scaffoldArgs, cloneProject, assertCloneSource, NAME_RE } from './projects';
 
 const PLUGIN_DIR = resolve(__dirname, '../../../plugin');
 const tmp = () => mkdtempSync(join(tmpdir(), 'pm-proj-'));
@@ -94,5 +95,49 @@ describe('createProject / initExisting / rebuildState', () => {
     expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2 })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2']);
     expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2, pinnedFile: 'C:\\p.md' })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2', '--pinned-file=C:\\p.md']);
     expect(scaffoldArgs()).toEqual([]);
+  });
+});
+
+describe('cloneProject / assertCloneSource', () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
+  function bareWithCommit(): string {
+    const work = tmp();
+    git(work, 'init', '-b', 'main');
+    writeFileSync(join(work, 'README.md'), '# src');
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'init');
+    const bare = mkdtempSync(join(tmpdir(), 'pm-bare-'));
+    git(bare, 'init', '--bare', '-b', 'main');
+    git(work, 'push', '-q', bare, 'main');
+    return bare;
+  }
+
+  it('clones a local repository into root/<name> without initialising pm', async () => {
+    const root = tmp();
+    const info = await cloneProject(root, bareWithCommit(), 'cloned');
+    expect(info).toMatchObject({ name: 'cloned', path: join(root, 'cloned'), initialized: false, state: null });
+    expect(existsSync(join(root, 'cloned', '.git'))).toBe(true);
+    expect(existsSync(join(root, 'cloned', 'README.md'))).toBe(true);
+    expect(existsSync(join(root, 'cloned', '.pm'))).toBe(false);
+  });
+
+  it('rejects an existing folder, a bad name and an unreachable source', async () => {
+    const root = tmp();
+    const bare = bareWithCommit();
+    mkdirSync(join(root, 'taken'));
+    await expect(cloneProject(root, bare, 'taken')).rejects.toThrow(/folder already exists/);
+    await expect(cloneProject(root, bare, 'bad name')).rejects.toThrow(/invalid project name/);
+    await expect(cloneProject(root, join(root, 'nope'), 'x')).rejects.toThrow();
+    expect(existsSync(join(root, 'x'))).toBe(false);
+  });
+
+  it('assertCloneSource accepts remote urls and existing absolute directories only', () => {
+    const dir = tmp();
+    expect(assertCloneSource('https://github.com/o/r.git')).toBe('https://github.com/o/r.git');
+    expect(assertCloneSource('git@github.com:o/r.git')).toBe('git@github.com:o/r.git');
+    expect(assertCloneSource(dir)).toBe(dir);
+    for (const bad of ['', 'javascript:alert(1)', 'relative/path', join(dir, 'missing'), 'ext::sh -c calc', 'file:///C:/x', 42, null]) {
+      expect(() => assertCloneSource(bad)).toThrow(/invalid clone source/);
+    }
   });
 });

@@ -70,6 +70,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
     checkClaude: vi.fn(async () => ({ ok: true, path: 'claude' })),
     listProjects: vi.fn(async () => [project('alpha')]),
     createProject: vi.fn(async (name: string) => project(name)),
+    cloneProject: vi.fn(async (_source: string, name: string) => ({ ...project(name), initialized: false, state: null })),
     initProject: vi.fn(),
     openProject: vi.fn(async (path: string) => project(path.split('\\').pop()!)),
     rebuildState: vi.fn(),

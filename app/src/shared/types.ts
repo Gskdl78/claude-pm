@@ -205,6 +205,8 @@ export interface PmApi {
   checkClaude(): Promise<ClaudeCheck>;
   listProjects(): Promise<ProjectInfo[]>;
   createProject(name: string): Promise<ProjectInfo>;
+  /** 從 https / git@ 網址或本機目錄 git clone 到 root/<name>；不自動初始化 pm */
+  cloneProject(source: string, name: string): Promise<ProjectInfo>;
   initProject(path: string): Promise<ProjectInfo>;
   openProject(path: string): Promise<ProjectInfo>;
   rebuildState(path: string): Promise<ProjectInfo>;

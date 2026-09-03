@@ -1,9 +1,22 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, isAbsolute, join } from 'node:path';
 import type { PmState, ProjectInfo } from '../shared/types';
+import { MAX_URL, REMOTE_URL_RE } from '../shared/git-validate';
+import { explainGitError } from '../shared/git-errors';
 import { runNodeScript } from './plugin-run';
+import { runGit } from './git-run';
 
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** clone 來源：https / git@ 網址，或既存的絕對本機目錄（本機複製）。放這裡是因為 shared 模組不能碰 node:fs。 */
+export function assertCloneSource(v: unknown): string {
+  if (typeof v !== 'string' || v.length === 0 || v.includes('\0')) throw new Error('invalid clone source');
+  if (v.length <= MAX_URL && REMOTE_URL_RE.test(v)) return v;
+  try {
+    if (isAbsolute(v) && existsSync(v) && statSync(v).isDirectory()) return v;
+  } catch { /* 讀不到就當不存在 */ }
+  throw new Error('invalid clone source');
+}
 
 function statePath(dir: string): string {
   return join(dir, '.pm', 'state.json');
@@ -52,6 +65,16 @@ export async function createProject(root: string, name: string, pluginDir: strin
   const dir = join(root, name);
   if (existsSync(dir)) throw new Error(`folder already exists: ${dir}`);
   await runNodeScript(scaffoldScript(pluginDir), [dir, name, ...scaffoldArgs(vars)]);
+  return readProjectInfo(dir);
+}
+
+/** 從網址或本機路徑複製到 root/<name>；只做 git clone，不自動初始化 pm（側欄仍會提供「初始化」）。 */
+export async function cloneProject(root: string, source: string, name: string): Promise<ProjectInfo> {
+  if (!NAME_RE.test(name)) throw new Error(`invalid project name: ${name}`);
+  const dir = join(root, name);
+  if (existsSync(dir)) throw new Error(`folder already exists: ${dir}`);
+  const r = await runGit(root, ['clone', '--', source, dir]);
+  if (!r.ok) throw new Error(explainGitError(`${r.stdout}\n${r.stderr}`) ?? (r.stderr.trim() || 'git clone 失敗'));
   return readProjectInfo(dir);
 }
 

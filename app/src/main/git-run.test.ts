@@ -8,7 +8,8 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { getBranches, getDiff, getExtras, getStatus, hasHead, parseStatus, runGit, showCommit, MAX_TEXT, TRUNCATED } from './git-run';
+import { getBranches, getDiff, getExtras, getStatus, hasHead, parseStatus, runGit, showCommit, syncRepo, MAX_TEXT, TRUNCATED } from './git-run';
+import { buildHunkPatch, splitHunks } from '../shared/diff-hunks';
 
 beforeAll(() => {
   Object.assign(process.env, {
@@ -181,5 +182,56 @@ describe('getExtras', () => {
     const ex = await getExtras(dir);
     expect(ex.stashes).toEqual([{ index: 0, message: 'On main: second' }, { index: 1, message: 'On main: first' }]);
     expect(ex.tags).toEqual(['v1']);
+  });
+});
+
+describe('runGit with stdin / syncRepo', () => {
+  it('applies a single hunk to the index through stdin', async () => {
+    const dir = repo();
+    const base = Array.from({ length: 20 }, (_, i) => `line${i + 1}`).join('\n') + '\n';
+    commit(dir, 'a.txt', base);
+    // 兩處相隔夠遠的修改 → git diff 會產生兩個 hunk
+    writeFileSync(join(dir, 'a.txt'), base.replace('line2\n', 'line2\nfirst-change\n').replace('line18\n', 'line18\nsecond-change\n'));
+    const parsed = splitHunks((await runGit(dir, ['diff', '--', 'a.txt'])).stdout);
+    expect(parsed.hunks).toHaveLength(2);
+    const r = await runGit(dir, ['apply', '--cached', '--whitespace=nowarn', '-'], { input: buildHunkPatch(parsed, 1) });
+    expect(r).toMatchObject({ ok: true, command: 'git apply --cached --whitespace=nowarn -' });
+    const staged = (await runGit(dir, ['diff', '--cached', '--', 'a.txt'])).stdout;
+    expect(staged).toContain('+second-change');
+    expect(staged).not.toContain('+first-change');
+    const unstaged = (await runGit(dir, ['diff', '--', 'a.txt'])).stdout;
+    expect(unstaged).toContain('+first-change');
+    expect(unstaged).not.toContain('+second-change');
+  });
+
+  it('syncRepo pushes directly when there is no upstream and reports the push failure without a remote', async () => {
+    const dir = repo();
+    commit(dir, 'a.txt', 'one');
+    const r = await syncRepo(dir);
+    expect(r.ok).toBe(false);
+    expect(r.stderr).toMatch(/origin/);
+    expect(r.command).toBe('git push -u origin HEAD');
+  });
+
+  it('syncRepo rebases onto the remote and pushes when an upstream exists', async () => {
+    const dir = repo();
+    commit(dir, 'a.txt', 'one');
+    const bare = mkdtempSync(join(tmpdir(), 'pm-bare-'));
+    git(bare, 'init', '--bare', '-b', 'main');
+    git(dir, 'remote', 'add', 'origin', bare);
+    git(dir, 'push', '-q', '-u', 'origin', 'main');
+    // 另一個 clone 在遠端塞一個 commit，模擬其他人已推送
+    const other = mkdtempSync(join(tmpdir(), 'pm-other-'));
+    git(other, 'clone', '-q', bare, '.');
+    commit(other, 'remote.txt', 'from remote');
+    git(other, 'push', '-q', 'origin', 'main');
+    commit(dir, 'local.txt', 'from local');
+
+    const r = await syncRepo(dir);
+    expect(r.ok).toBe(true);
+    expect(r.command).toBe('git pull --rebase && git push -u origin HEAD');
+    expect(git(dir, 'log', '--format=%s')).toMatch(/from remote/);
+    expect(git(bare, 'log', '--format=%s', 'main')).toMatch(/from local/);
+    expect((await getStatus(dir))).toMatchObject({ ahead: 0, behind: 0 });
   });
 });

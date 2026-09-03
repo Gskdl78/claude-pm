@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createHandlers, type HandlerDeps } from './ipc-handlers';
 import { SessionManager, type SpawnFn } from './pty';
 
@@ -393,5 +394,24 @@ describe('ipc handlers', () => {
     expect(onUserInput).toHaveBeenCalledWith(join(root, 'typing'));
     h['pty:write'](join(base, 'outside'), 'y');
     expect(onUserInput).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('projects:clone', () => {
+  it('validates the source, clones into root and lists the new project', async () => {
+    const { h, root, base } = setup();
+    for (const bad of ['javascript:alert(1)', 'relative/repo', join(base, 'missing')]) {
+      await expect(h['projects:clone'](bad, 'cloned')).rejects.toThrow(/invalid clone source/);
+    }
+    const work = join(base, 'work'); mkdirSync(work);
+    execFileSync('git', ['init', '-b', 'main'], { cwd: work, stdio: 'pipe' });
+    writeFileSync(join(work, 'README.md'), '# w');
+    execFileSync('git', ['add', '-A'], { cwd: work, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: work, stdio: 'pipe' });
+    const info = await h['projects:clone'](work, 'cloned');
+    expect(info).toMatchObject({ name: 'cloned', path: join(root, 'cloned'), initialized: false });
+    expect(existsSync(join(root, 'cloned', '.git'))).toBe(true);
+    expect((await h['projects:list']()).map((p) => p.name)).toEqual(['cloned']);
+    await expect(h['projects:clone'](work, 'cloned')).rejects.toThrow(/already exists/);
   });
 });

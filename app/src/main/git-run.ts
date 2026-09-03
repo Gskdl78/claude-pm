@@ -17,10 +17,15 @@ export function gitEnv(): NodeJS.ProcessEnv {
   return { ...process.env, LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
 }
 
+export interface CaptureOptions {
+  /** 要寫進子程序 stdin 的內容；寫完即關閉。沒給就不碰 stdin（子程序讀到 EOF）。 */
+  input?: string;
+}
+
 /** execFile 共用：永不 reject，spawn 失敗（找不到程式）以 code 127 回報，stderr 附上錯誤訊息。 */
-export function capture(exe: string, argv: string[], dir: string, env: NodeJS.ProcessEnv, command: string): Promise<GitResult> {
+export function capture(exe: string, argv: string[], dir: string, env: NodeJS.ProcessEnv, command: string, opts: CaptureOptions = {}): Promise<GitResult> {
   return new Promise((done) => {
-    execFile(
+    const child = execFile(
       exe,
       argv,
       { cwd: dir, env, windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
@@ -32,12 +37,37 @@ export function capture(exe: string, argv: string[], dir: string, env: NodeJS.Pr
         done({ ok: false, code, stdout, stderr: `${stderr}${extra}`.trim(), command });
       },
     );
+    if (opts.input !== undefined && child.stdin) {
+      // 子程序提早結束（例如 spawn 失敗）時 stdin 會 EPIPE；結果已由 callback 回報，這裡只需吞掉
+      child.stdin.on('error', () => {});
+      child.stdin.end(opts.input);
+    }
   });
 }
 
-/** 執行 git；永不 reject，結果以 ok / code / stdout / stderr 回報。 */
-export function runGit(dir: string, args: string[]): Promise<GitResult> {
-  return capture('git', [...BASE_ARGS, ...args], dir, gitEnv(), formatGitCommand(args));
+/** 執行 git；永不 reject，結果以 ok / code / stdout / stderr 回報。opts.input 走 stdin（git apply -）。 */
+export function runGit(dir: string, args: string[], opts: CaptureOptions = {}): Promise<GitResult> {
+  return capture('git', [...BASE_ARGS, ...args], dir, gitEnv(), formatGitCommand(args), opts);
+}
+
+const SYNC_COMMAND = 'git pull --rebase && git push -u origin HEAD';
+
+/**
+ * 與獨立版 git-panel（git_service.py sync）相同：沒有上游就直接 push -u；
+ * 有上游先 pull --rebase 再 push。pull 失敗就停（除了「遠端沒有這個分支」，那表示只差推送）。
+ */
+export async function syncRepo(dir: string): Promise<GitResult> {
+  const up = await runGit(dir, ['rev-parse', '--abbrev-ref', '@{upstream}']);
+  if (!up.ok) return runGit(dir, ['push', '-u', 'origin', 'HEAD']);
+  const pull = await runGit(dir, ['pull', '--rebase']);
+  if (!pull.ok && !pull.stderr.toLowerCase().includes("couldn't find remote ref")) return { ...pull, command: SYNC_COMMAND };
+  const push = await runGit(dir, ['push', '-u', 'origin', 'HEAD']);
+  return {
+    ...push,
+    stdout: `${pull.stdout}\n${push.stdout}`.trim(),
+    stderr: `${pull.stderr}\n${push.stderr}`.trim(),
+    command: SYNC_COMMAND,
+  };
 }
 
 export function isRepo(dir: string): boolean {
