@@ -412,7 +412,7 @@ export default function App() {
         insightsRevision={insightsRevision} onRevealCommit={(p, h) => { void handleRevealCommit(p, h); }} />
       <aside className="git">
         <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight}
-          revealCommit={revealCommit} />
+          revealCommit={revealCommit} stage={current?.state?.stage ?? null} />
       </aside>
       <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
       <ConfirmDialog

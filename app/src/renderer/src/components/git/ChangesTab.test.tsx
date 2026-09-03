@@ -34,7 +34,7 @@ describe('ChangesTab', () => {
       file({ path: 'c.txt', index: 'U', work: 'U', unstaged: false, conflicted: true }),
     ];
     const cb = callbacks();
-    render(<Host status={status(files)} busy={false} {...cb} />);
+    render(<Host status={status(files)} busy={false} stage={null} {...cb} />);
     expect(screen.getByText('衝突（1）')).toBeInTheDocument();
     expect(screen.getByText('已暫存（1）')).toBeInTheDocument();
     expect(screen.getByText('未暫存（2）')).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe('ChangesTab', () => {
 
   it('shows empty hints, disables bulk buttons and forwards commits', () => {
     const cb = callbacks();
-    render(<Host status={status([])} busy={false} {...cb} />);
+    render(<Host status={status([])} busy={false} stage={null} {...cb} />);
     expect(screen.queryByText(/衝突（/)).not.toBeInTheDocument();
     expect(screen.getByText('沒有已暫存的變更')).toBeInTheDocument();
     expect(screen.getByText('工作目錄沒有變更')).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe('ChangesTab', () => {
   it('mirrors the commit message handed down and clears it when the owner does', () => {
     const cb = callbacks();
     const onMessageChange = vi.fn();
-    const props = { status: status([]), busy: false, amend: false, onMessageChange, onAmendChange: vi.fn(), ...cb };
+    const props = { status: status([]), busy: false, stage: null, amend: false, onMessageChange, onAmendChange: vi.fn(), ...cb };
     const { rerender } = render(<ChangesTab {...props} message="msg" />);
     expect(screen.getByLabelText('commit 訊息')).toHaveValue('msg');
     fireEvent.change(screen.getByLabelText('commit 訊息'), { target: { value: 'msg2' } });

@@ -210,6 +210,15 @@ button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
 .diff-body .dl.del { color: var(--danger); background: rgba(241, 76, 76, .08); }
 .diff-body .dl.hunk { color: #569cd6; }
 .diff-body .dl.meta { color: var(--muted); }
+/* 逐段暫存：hunk 標頭列右側的按鈕 */
+.diff-hunk-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hunk-btn { flex: none; font-size: 11px; padding: 1px 6px; line-height: 1.4; }
+
+/* commit 前綴列：目前階段的前綴以 primary 高亮，其餘為 ghost */
+.prefix-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.prefix-btn { font-size: 11px; padding: 1px 6px; line-height: 1.4; }
+.prefix-row .ghost { background: transparent; color: var(--muted); }
+.prefix-row .ghost:hover:not(:disabled) { color: var(--accent); }
 
 /* ---- git panel batch 2：中止合併、推送被拒、歷史動作、進階分頁、發佈精靈 ---- */
 .git-conflict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import type { ProjectInfo } from '../../../shared/types';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 /** 與主程序的 MAX_SESSIONS 同步；只用在提示文字 */
 export const MAX_SESSIONS_UI = 4;
@@ -15,9 +17,11 @@ interface Props {
 
 /** session 已達上限時，讓使用者挑一個關掉再開新的。 */
 export function SessionLimitDialog({ pending, live, busy, onClose, onCancel }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, pending !== null);
   if (!pending) return null;
   return (
-    <div className="dialog" role="dialog" aria-modal="true" aria-label="session 上限" onKeyDown={(e) => { if (e.key === 'Escape' && !busy) onCancel(); }}>
+    <div ref={ref} className="dialog" role="dialog" aria-modal="true" aria-label="session 上限" onKeyDown={(e) => { if (e.key === 'Escape' && !busy) onCancel(); }}>
       <div className="dialog-box">
         <h3>同時開啟的 session 已達上限（{MAX_SESSIONS_UI}）</h3>
         <p>要開啟 {pending.name}，請先關閉一個：</p>
@@ -27,7 +31,8 @@ export function SessionLimitDialog({ pending, live, busy, onClose, onCancel }: P
             <button disabled={busy} onClick={() => onClose(s.path)}>關閉</button>
           </div>
         ))}
-        <div className="dialog-actions"><button type="button" disabled={busy} onClick={onCancel}>取消</button></div>
+        {/* 焦點預設在「取消」：Enter 不會直接關掉別人的 session */}
+        <div className="dialog-actions"><button type="button" autoFocus disabled={busy} onClick={onCancel}>取消</button></div>
       </div>
     </div>
   );

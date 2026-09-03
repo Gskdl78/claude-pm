@@ -31,8 +31,8 @@ vi.mock('./components/insights/InsightsView', () => ({
 // App 在每個測試才動態 import，所以 doMock 必須在 renderApp 之前呼叫。
 function mockGitPanel() {
   vi.doMock('./components/git/GitPanel', () => ({
-    GitPanel: ({ notices, revealCommit }: { notices?: Array<{ id: number; text: string }>; revealCommit?: { hash: string; seq: number } | null }) => (
-      <div data-testid="git-panel">
+    GitPanel: ({ notices, revealCommit, stage }: { notices?: Array<{ id: number; text: string }>; revealCommit?: { hash: string; seq: number } | null; stage?: string | null }) => (
+      <div data-testid="git-panel" data-stage={stage ?? ''}>
         {(notices ?? []).map((n) => <div key={n.id} className="notice">{n.text}</div>)}
         <div className="reveal">{revealCommit?.hash}</div>
       </div>
@@ -784,5 +784,18 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('專案名稱'), { target: { value: 'gamma' } });
     fireEvent.click(screen.getByRole('button', { name: '建立' }));
     await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\beta'));
+  });
+});
+
+describe('App (git panel polish)', () => {
+  it('passes the current stage to the git panel', async () => {
+    mockGitPanel();
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({ listProjects: vi.fn(async () => [alpha]), openProject: vi.fn(async () => alpha) });
+    await renderApp(api);
+    await screen.findByText('alpha');
+    expect(screen.getByTestId('git-panel')).toHaveAttribute('data-stage', '');
+    fireEvent.click(screen.getByText('alpha'));
+    await waitFor(() => expect(screen.getByTestId('git-panel')).toHaveAttribute('data-stage', 'design'));
   });
 });

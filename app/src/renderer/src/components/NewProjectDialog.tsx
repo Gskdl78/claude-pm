@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 export const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -12,11 +13,13 @@ interface Props {
 
 export function NewProjectDialog({ open, busy, error, onSubmit, onCancel }: Props) {
   const [name, setName] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, open);
   if (!open) return null;
   const valid = NAME_RE.test(name);
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid && !busy) onSubmit(name); };
   return (
-    <div className="dialog">
+    <div ref={ref} className="dialog" role="dialog" aria-modal="true" aria-label="新專案">
       <form onSubmit={submit}>
         <label htmlFor="new-project-name">專案名稱</label>
         <input id="new-project-name" value={name} autoFocus disabled={busy} onChange={(e) => setName(e.target.value)} />

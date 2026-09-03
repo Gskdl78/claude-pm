@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitExtras, GitResult, GitStatus, Notice, PublishChoice } from '../../../../shared/types';
+import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitExtras, GitResult, GitStatus, Notice, PublishChoice, StageName } from '../../../../shared/types';
 import { buildGitArgs, describeGitAction, formatGitCommand } from '../../../../shared/git-actions';
 import { explainGitError, gitResultText, isPushRejected } from '../../../../shared/git-errors';
+import { buildHunkPatch, splitHunks } from '../../../../shared/diff-hunks';
 import { describePublish } from '../../../../shared/gh-actions';
 import { pm } from '../../api';
 import { errorMessage } from '../../errors';
@@ -28,6 +29,8 @@ const EMPTY_BRANCHES: GitBranches = { current: '', all: [] };
 const EMPTY_EXTRAS: GitExtras = { stashes: [], tags: [] };
 // 沒有提示時共用同一個陣列，避免每次 render 都產生新的參考而重跑 effect
 const NO_NOTICES: Notice[] = [];
+/** 同步是多步驟，buildGitArgs 只給得出第一步；確認框要顯示主程序 syncRepo 實際會跑的整串指令 */
+const SYNC_COMMAND = 'git pull --rebase && git push -u origin HEAD';
 
 interface Props {
   path: string | null;
@@ -40,15 +43,18 @@ interface Props {
   defaultLogHeight?: number;
   /** 洞察頁要求開啟的 commit；seq 讓同一個 hash 也能重複觸發 */
   revealCommit?: { hash: string; seq: number } | null;
+  /** 目前專案的階段（App 由 state.stage 傳入）；commit 前綴列據此高亮 */
+  stage?: StageName | 'done' | null;
 }
 
 type Pending =
   | { request: ConfirmRequest; action: GitAction }
   /** 發佈精靈：url 路線是 addRemote → push 兩個動作；create 路線走 gh */
   | { request: ConfirmRequest; publish: PublishChoice };
-interface Viewer { title: string; text: string }
+/** file / mode 只有從「變更」頁開的 diff 才有；有它們才能逐段暫存並在動作後重讀 */
+interface Viewer { title: string; text: string; file?: string; mode?: GitDiffMode }
 
-export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaultLogHeight, revealCommit = null }: Props) {
+export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaultLogHeight, revealCommit = null, stage = null }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [branches, setBranches] = useState<GitBranches>(EMPTY_BRANCHES);
@@ -64,7 +70,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
   const [adv, setAdv] = useState<AdvancedForm>(EMPTY_ADVANCED_FORM);
   const [extras, setExtras] = useState<GitExtras>(EMPTY_EXTRAS);
   const [wizardOpen, setWizardOpen] = useState(false);
-  // 推送被拒後顯示「先擷取 / 拉取（變基）」提示列；推送、拉取、擷取成功即清除
+  // 推送被拒後顯示「先擷取 / 拉取（變基）」提示列；推送、拉取、同步、發佈成功即清除（擷取不會改變落後狀態，不清）
   const [rejected, setRejected] = useState(false);
   // 每次面板動作結束 +1，讓「進階」分頁重讀收藏與標籤
   const [actionSeq, setActionSeq] = useState(0);
@@ -156,12 +162,12 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
     log('cmd', r.command);
     if (r.ok) {
       log('ok', '完成 ✓');
-      if (kind === 'push' || kind === 'pull' || kind === 'pullRebase' || kind === 'fetch' || kind === 'publish') setRejected(false);
+      if (kind === 'push' || kind === 'pull' || kind === 'pullRebase' || kind === 'sync' || kind === 'publish') setRejected(false);
       return true;
     }
     const text = gitResultText(r);
     log('error', explainGitError(text) ?? '執行失敗，原始輸出如下：', text);
-    if ((kind === 'push' || kind === 'publish') && isPushRejected(text)) setRejected(true);
+    if ((kind === 'push' || kind === 'sync' || kind === 'publish') && isPushRejected(text)) setRejected(true);
     return false;
   }, [log]);
 
@@ -211,9 +217,35 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
     if (!status || busy) return;
     const spec = describeGitAction(action, status);
     if (!spec) { void execute(action); return; }
-    const command = formatGitCommand(buildGitArgs(action, { hasHead: !status.noCommits }));
+    const command = action.kind === 'sync' ? SYNC_COMMAND : formatGitCommand(buildGitArgs(action, { hasHead: !status.noCommits }));
     setPending({ request: { ...spec, command }, action });
   }, [status, busy, execute]);
+
+  /**
+   * 逐段暫存 / 取消暫存：把 diff 視窗裡的第 i 段組成單檔 patch 交給 git apply --cached。
+   * 與 stage / unstage 同級（只動索引、可逆），不彈確認；成功後重讀同一份 diff，沒剩就關閉視窗。
+   */
+  const applyHunk = async (i: number) => {
+    if (!path || !viewer?.file || !viewer.mode || viewer.mode === 'untracked' || busy) return;
+    const { file, mode } = viewer;
+    const patch = buildHunkPatch(splitHunks(viewer.text), i);
+    setBusy(true);
+    try {
+      const r = await pm.git.run(path, { kind: 'applyPatch', patch, reverse: mode === 'staged' });
+      if (pathRef.current !== path) return;
+      if (report(r, 'applyPatch')) {
+        const text = await pm.git.diff(path, file, mode);
+        if (pathRef.current !== path) return;
+        setViewer((v) => (v && v.file === file && v.mode === mode ? (text.trim() === '' ? null : { ...v, text }) : v));
+      }
+    } catch (e) {
+      if (pathRef.current !== path) return;
+      log('error', errorMessage(e));
+    } finally {
+      setBusy(false);
+      if (pathRef.current === path) { setActionSeq((n) => n + 1); void refresh(); }
+    }
+  };
 
   const confirmPending = () => {
     if (!pending) return;
@@ -238,7 +270,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
 
   const openDiff = async (file: string, mode: GitDiffMode) => {
     if (!path) return;
-    try { setViewer({ title: `差異：${file}`, text: await pm.git.diff(path, file, mode) }); }
+    try { setViewer({ title: `差異：${file}`, text: await pm.git.diff(path, file, mode), file, mode }); }
     catch (e) { log('error', `無法讀取差異：${errorMessage(e)}`); }
   };
 
@@ -266,7 +298,10 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
   const dialogs = (
     <>
       <ConfirmDialog request={pending?.request ?? null} onConfirm={confirmPending} onCancel={() => setPending(null)} />
-      {viewer && <DiffView title={viewer.title} text={viewer.text} onClose={() => setViewer(null)} />}
+      {viewer && (
+        <DiffView title={viewer.title} text={viewer.text} mode={viewer.mode} busy={busy}
+          onHunk={viewer.file ? (i) => { void applyHunk(i); } : undefined} onClose={() => setViewer(null)} />
+      )}
       {wizardOpen && path && status && (
         <PublishWizard path={path} noCommits={status.noCommits} busy={busy} onSubmit={submitPublish} onCancel={() => setWizardOpen(false)} />
       )}
@@ -311,6 +346,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
           <button type="button" disabled={busy} onClick={() => syncAction('push')}>推送</button>
           <button type="button" disabled={busy} onClick={() => syncAction('pull')}>拉取</button>
           <button type="button" disabled={busy || !status.hasRemote} onClick={() => request({ kind: 'fetch' })}>擷取</button>
+          <button type="button" disabled={busy || !status.hasRemote} title="拉取（變基）後推送；沒有上游時直接推送並建立追蹤" onClick={() => request({ kind: 'sync' })}>同步</button>
         </div>
       </header>
       {(status.merging || conflicts > 0) && (
@@ -341,7 +377,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
       </nav>
       <div className="git-body" role="tabpanel">
         {tab === 'changes' && (
-          <ChangesTab status={status} busy={busy}
+          <ChangesTab status={status} busy={busy} stage={stage}
             message={message} amend={amend} onMessageChange={setMessage} onAmendChange={setAmend}
             onStage={(file) => request({ kind: 'stage', file })}
             onUnstage={(file) => request({ kind: 'unstage', file })}

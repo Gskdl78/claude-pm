@@ -87,3 +87,26 @@ describe('defaultRepoName', () => {
     expect(defaultRepoName('C:\\P\\has space')).toBe('');
   });
 });
+
+describe('PublishWizard focus and Escape', () => {
+  it('focuses the first text input when it opens and cancels on Escape unless busy', async () => {
+    gh.check.mockResolvedValue(ready);
+    const onCancel = vi.fn();
+    const { rerender } = render(<PublishWizard path={P} noCommits={false} busy={false} onSubmit={() => {}} onCancel={onCancel} />);
+    await screen.findByText('登入狀態：已登入');
+    expect(screen.getByLabelText('倉庫名稱')).toBe(document.activeElement);
+    rerender(<PublishWizard path={P} noCommits={false} busy onSubmit={() => {}} onCancel={onCancel} />);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+    rerender(<PublishWizard path={P} noCommits={false} busy={false} onSubmit={() => {}} onCancel={onCancel} />);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses the url input when gh is missing', async () => {
+    gh.check.mockResolvedValue(missing);
+    render(<PublishWizard path={P} noCommits={false} busy={false} onSubmit={() => {}} onCancel={() => {}} />);
+    await screen.findByText('GitHub CLI：未安裝');
+    expect(screen.getByLabelText('倉庫網址')).toBe(document.activeElement);
+  });
+});

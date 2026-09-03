@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { AppConfig, ConfigPatch, ModelName } from '../../../shared/types';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { LIMITS, MODEL_OPTIONS } from '../../../shared/config-schema';
 
 export interface SettingsSubmit { root: string; patch: ConfigPatch }
@@ -46,6 +47,8 @@ export function SettingsDialog({ open, config, busy, error, onPickFolder, onSave
     if (open && !wasOpen.current) setForm(fromConfig(config));
     wasOpen.current = open;
   }, [open, config]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(rootRef, open);
 
   if (!open) return null;
 
@@ -90,7 +93,7 @@ export function SettingsDialog({ open, config, busy, error, onPickFolder, onSave
   );
 
   return (
-    <div className="dialog" role="dialog" aria-modal="true" aria-label="設定" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="dialog" role="dialog" aria-modal="true" aria-label="設定" onKeyDown={onKeyDown}>
       <form className="settings" onSubmit={submit}>
         <h3>設定</h3>
         <div className="field">
