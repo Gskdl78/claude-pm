@@ -2,7 +2,7 @@ import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
 import { registerIpc } from './ipc';
 import { installAppMenu } from './menu';
-import { PtyManager } from './pty';
+import { SessionManager } from './pty';
 import { getPluginDir } from './plugin-dir';
 import { isExternalUrl } from './url-policy';
 
@@ -39,9 +39,9 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   installAppMenu();
   const win = createWindow();
-  const pty = new PtyManager();
+  const pty = new SessionManager();
   registerIpc({ win, pty, pluginDir: getPluginDir() });
-  app.on('before-quit', () => pty.kill());
+  app.on('before-quit', () => pty.killAll());
 });
 
 app.on('window-all-closed', () => app.quit());

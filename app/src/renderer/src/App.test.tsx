@@ -49,7 +49,7 @@ function projectAt(name: string, stage: StageName | 'done', status: 'pending' | 
   return p;
 }
 
-type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: number) => void>; idle: Array<(i: boolean) => void>; docs: Array<() => void> };
+type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(path: string, c: number) => void>; idle: Array<(path: string, i: boolean) => void>; docs: Array<() => void> };
 
 function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [], idle: [], docs: [] }): PmApi {
   const api: PmApi = {
@@ -96,6 +96,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
     pty: {
       start: vi.fn(async () => {}),
       write: vi.fn(), resize: vi.fn(), kill: vi.fn(async () => {}),
+      list: vi.fn(async () => []), focus: vi.fn(),
       onData: vi.fn(() => () => {}),
       onExit: vi.fn((cb) => { listeners.exit.push(cb); return () => {}; }),
       onIdle: vi.fn((cb) => { listeners.idle.push(cb); return () => {}; }),
@@ -139,9 +140,9 @@ describe('App', () => {
     }, listeners);
     await renderApp(api);
     await waitFor(() => expect(api.pty.start).toHaveBeenCalledWith('C:\\P\\beta', expect.objectContaining({ continue: true })));
-    await act(async () => { listeners.exit.forEach((cb) => cb(1)); });
+    await act(async () => { listeners.exit.forEach((cb) => cb('C:\\P\\beta', 1)); });
     await waitFor(() => expect(api.pty.start).toHaveBeenLastCalledWith('C:\\P\\beta', expect.objectContaining({ continue: false })));
-    await act(async () => { listeners.exit.forEach((cb) => cb(0)); });
+    await act(async () => { listeners.exit.forEach((cb) => cb('C:\\P\\beta', 0)); });
     expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'exited');
   });
 
@@ -187,13 +188,13 @@ describe('App', () => {
 
     // Well past the old 5s fallback window: the fallback must still happen.
     const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
-    await act(async () => { listeners.exit.forEach((cb) => cb(1)); });
+    await act(async () => { listeners.exit.forEach((cb) => cb('C:\\P\\beta', 1)); });
     now.mockRestore();
     await waitFor(() => expect(api.pty.start).toHaveBeenLastCalledWith('C:\\P\\beta', expect.objectContaining({ continue: false })));
     expect(api.pty.start).toHaveBeenCalledTimes(2);
 
     // The fallback launch failing must not start yet another --continue launch.
-    await act(async () => { listeners.exit.forEach((cb) => cb(1)); });
+    await act(async () => { listeners.exit.forEach((cb) => cb('C:\\P\\beta', 1)); });
     expect(api.pty.start).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'exited');
 
@@ -318,7 +319,7 @@ describe('App', () => {
     expect(btn).toBeDisabled();
     expect(screen.queryByText('● 等待回覆')).toBeNull();
 
-    act(() => { for (const cb of listeners.idle) cb(true); });
+    act(() => { for (const cb of listeners.idle) cb('C:\\P\\alpha', true); });
     expect(btn).toBeEnabled();
     expect(screen.getByText('● 等待回覆')).toBeInTheDocument();
 
@@ -334,7 +335,7 @@ describe('App', () => {
       vi.useRealTimers();
     }
 
-    act(() => { for (const cb of listeners.idle) cb(false); });
+    act(() => { for (const cb of listeners.idle) cb('C:\\P\\alpha', false); });
     expect(btn).toBeDisabled();
     expect(screen.queryByText('● 等待回覆')).toBeNull();
   });
@@ -413,10 +414,10 @@ describe('App', () => {
     await renderApp(api);
     fireEvent.click(await screen.findByText('alpha'));
     await screen.findByRole('button', { name: /產品設計/ });
-    act(() => { for (const cb of listeners.idle) cb(true); });
+    act(() => { for (const cb of listeners.idle) cb('C:\\P\\alpha', true); });
     expect(screen.getByText('● 等待回覆')).toBeInTheDocument();
 
-    act(() => { for (const cb of listeners.exit) cb(0); });
+    act(() => { for (const cb of listeners.exit) cb('C:\\P\\alpha', 0); });
     expect(screen.queryByText('● 等待回覆')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '重新啟動' }));
     await waitFor(() => expect(api.pty.start).toHaveBeenCalledTimes(2));

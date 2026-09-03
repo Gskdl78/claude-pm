@@ -34,7 +34,7 @@ class RO {
 const ptyWrite = vi.fn();
 (window as unknown as { pm: Partial<PmApi> }).pm = {
   pty: {
-    start: vi.fn(), write: ptyWrite, resize: vi.fn(), kill: vi.fn(),
+    start: vi.fn(), write: ptyWrite, resize: vi.fn(), kill: vi.fn(), list: vi.fn(async () => []), focus: vi.fn(),
     onData: vi.fn(() => () => {}),
     onExit: vi.fn(() => () => {}),
   } as unknown as PmApi['pty'],

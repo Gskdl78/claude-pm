@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import type { AppConfig, ClaudeCheck, ConfigPatch, GitCommit, InsightsReport, PinnedNote, ProjectInfo, PtyStartOptions } from '../shared/types';
+import type { AppConfig, ClaudeCheck, ConfigPatch, GitCommit, InsightsReport, PinnedNote, ProjectInfo, PtyStartOptions, SessionInfo } from '../shared/types';
 import { validatePatch } from '../shared/config-schema';
 import { loadConfig, saveConfig, rememberProject, pinnedNotesPath } from './config';
 import { assertNote, collectInsights, pinNote, readPinned, unpinNote, writePinned } from './insights';
@@ -8,14 +8,14 @@ import { listProjects, readProjectInfo, createProject, initExisting, rebuildStat
 import { getLog } from './git';
 import { createGitHandlers, type GitHandlers } from './git-handlers';
 import { createDocsHandlers, type DocsHandlers } from './docs-handlers';
-import { PtyManager, buildClaudeArgs, findClaude } from './pty';
+import { SessionManager, buildClaudeArgs, findClaude } from './pty';
 import { ProjectWatcher } from './watcher';
 import { BLOCKED_OPEN_EXT_RE, isExternalUrl } from './url-policy';
 
 export interface HandlerDeps {
   pluginDir: string;
   configFile?: string;
-  pty: PtyManager;
+  pty: SessionManager;
   send: (channel: string, ...args: unknown[]) => void;
   openPath?: (p: string) => Promise<string>;
   /** 只接 http(s) / mailto 的外部連結，交給系統瀏覽器開啟 */
@@ -24,7 +24,11 @@ export interface HandlerDeps {
   /** pty 成功啟動後呼叫，帶專案目錄（已通過 root 守衛） */
   onSessionStart?: (dir: string) => void;
   /** pty 被主動終止後呼叫；kill() 不會觸發 exit 事件，需由此清掉等待輸入狀態 */
-  onSessionEnd?: () => void;
+  onSessionEnd?: (dir: string) => void;
+  /** renderer 目前看的專案；用來決定背景 watcher 與通知規則 */
+  onFocusChanged?: (path: string | null) => void;
+  /** 背景 state watcher 週期（測試用） */
+  watchIntervalMs?: number;
   /** 系統資料夾選擇器；沒注入（測試）時 dialog:pickFolder 回 null */
   pickFolder?: (defaultPath: string) => Promise<string | null>;
   /** 每次設定持久化後呼叫，讓 ipc.ts 更新通知開關等快取 */
@@ -48,9 +52,11 @@ export interface Handlers extends GitHandlers, DocsHandlers {
   'shell:openPath': (path: string) => Promise<string>;
   'shell:openExternal': (url: string) => Promise<void>;
   'pty:start': (path: string, opts: PtyStartOptions) => Promise<void>;
-  'pty:write': (data: string) => void;
-  'pty:resize': (cols: number, rows: number) => void;
-  'pty:kill': () => Promise<void>;
+  'pty:write': (path: string, data: string) => void;
+  'pty:resize': (path: string, cols: number, rows: number) => void;
+  'pty:kill': (path: string) => Promise<void>;
+  'pty:list': () => Promise<SessionInfo[]>;
+  'pty:focus': (path: string | null) => void;
   'insights:collect': () => Promise<InsightsReport>;
   'insights:pinned': () => Promise<PinnedNote[]>;
   'insights:pin': (note: PinnedNote) => Promise<PinnedNote[]>;
@@ -85,6 +91,25 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     implModel: cfg.implModel, reviewModel: cfg.reviewModel, maxRetries: cfg.maxRetries,
     ...(existsSync(pinnedFile) ? { pinnedFile } : {}),
   });
+
+  let focusPath: string | null = null;
+  const bgWatchers = new Map<string, ProjectWatcher>();
+  const bgWatch = (dir: string) => {
+    if (bgWatchers.has(dir)) return;
+    const w = new ProjectWatcher(dir, deps.watchIntervalMs ?? 500, { stateOnly: true });
+    w.on('state', () => deps.send('project:state', readProjectInfo(dir)));
+    w.start();
+    bgWatchers.set(dir, w);
+  };
+  const bgUnwatch = (dir: string) => { bgWatchers.get(dir)?.stop(); bgWatchers.delete(dir); };
+  /** 非目前專案且有 live session 的目錄才需要背景 watcher */
+  const syncBgWatchers = () => {
+    const live = new Set(deps.pty.list().map((s) => s.path));
+    for (const dir of [...bgWatchers.keys()]) if (!live.has(dir) || dir === focusPath) bgUnwatch(dir);
+    for (const dir of live) if (dir !== focusPath) bgWatch(dir);
+  };
+  /** 射後不理的頻道：路徑不合法就靜默忽略，不丟例外回 renderer */
+  const softGuard = (p: unknown): string | null => { try { return typeof p === 'string' ? guard(p) : null; } catch { return null; } };
 
   const watch = (dir: string) => {
     watcher?.stop();
@@ -152,28 +177,32 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       const dir = guard(path);
       const initialPrompt = checkInitialPrompt(opts.initialPrompt);
       try {
-        deps.pty.start({
-          cwd: dir,
+        deps.pty.start(dir, {
           command: 'claude',
           args: buildClaudeArgs({ continue: opts.continue, initialPrompt }),
           cols: clampSize(opts.cols, 80),
           rows: clampSize(opts.rows, 24),
         });
       } catch (e) {
-        // 失敗時也要收掉上一個 session，否則舊的閒置計時器會送出幽靈通知。
-        deps.onSessionEnd?.();
+        // 失敗時也要收掉這個 session，否則舊的閒置計時器會送出幽靈通知。
+        deps.onSessionEnd?.(dir);
         throw e;
       }
       deps.onSessionStart?.(dir);
+      syncBgWatchers();
     },
 
-    'pty:write': (data) => { if (typeof data === 'string') deps.pty.write(data); },
-    'pty:resize': (cols, rows) => {
+    'pty:write': (path, data) => { const dir = softGuard(path); if (dir && typeof data === 'string') deps.pty.write(dir, data); },
+    'pty:resize': (path, cols, rows) => {
+      const dir = softGuard(path);
+      if (!dir) return;
       if (typeof cols !== 'number' || !Number.isFinite(cols)) return;
       if (typeof rows !== 'number' || !Number.isFinite(rows)) return;
-      deps.pty.resize(cols, rows);
+      deps.pty.resize(dir, cols, rows);
     },
-    'pty:kill': async () => { deps.pty.kill(); deps.onSessionEnd?.(); },
+    'pty:kill': async (path) => { const dir = guard(path); deps.pty.kill(dir); deps.onSessionEnd?.(dir); syncBgWatchers(); },
+    'pty:list': async () => deps.pty.list(),
+    'pty:focus': (path) => { focusPath = path === null ? null : softGuard(path); deps.onFocusChanged?.(focusPath); syncBgWatchers(); },
 
     'insights:collect': async () => collectInsights(cfg.root),
     'insights:pinned': async () => readPinned(pinnedFile),
@@ -189,6 +218,6 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return next;
     },
 
-    dispose: () => { watcher?.stop(); watcher = null; },
+    dispose: () => { watcher?.stop(); watcher = null; for (const dir of [...bgWatchers.keys()]) bgUnwatch(dir); },
   };
 }

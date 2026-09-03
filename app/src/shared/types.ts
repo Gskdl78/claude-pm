@@ -216,13 +216,17 @@ export interface PmApi {
   onDocsChanged(cb: () => void): () => void;
   pty: {
     start(path: string, opts: PtyStartOptions): Promise<void>;
-    write(data: string): void;
-    resize(cols: number, rows: number): void;
-    kill(): Promise<void>;
-    onData(cb: (data: string) => void): () => void;
-    onExit(cb: (code: number) => void): () => void;
-    /** true = Claude Code 停在提示符等輸入（3 秒無輸出）；false = 忙碌或無 session */
-    onIdle(cb: (idle: boolean) => void): () => void;
+    write(path: string, data: string): void;
+    resize(path: string, cols: number, rows: number): void;
+    kill(path: string): Promise<void>;
+    /** 主程序目前活著的 session */
+    list(): Promise<SessionInfo[]>;
+    /** 告訴主程序 renderer 正在看哪個專案；null = 沒有 */
+    focus(path: string | null): void;
+    onData(cb: (path: string, data: string) => void): () => void;
+    onExit(cb: (path: string, code: number) => void): () => void;
+    /** true = 該 session 停在提示符等輸入（3 秒無輸出）；false = 忙碌或已結束 */
+    onIdle(cb: (path: string, idle: boolean) => void): () => void;
   };
   onStateChanged(cb: (p: ProjectInfo) => void): () => void;
   onGitChanged(cb: (commits: GitCommit[]) => void): () => void;
