@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitExtras, GitResult, GitStatus, PublishChoice } from '../../../../shared/types';
+import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitExtras, GitResult, GitStatus, Notice, PublishChoice } from '../../../../shared/types';
 import { buildGitArgs, describeGitAction, formatGitCommand } from '../../../../shared/git-actions';
 import { explainGitError, gitResultText, isPushRejected } from '../../../../shared/git-errors';
 import { describePublish } from '../../../../shared/gh-actions';
@@ -32,6 +32,8 @@ interface Props {
   commits: GitCommit[];
   /** App 收到 project:git 事件時遞增；面板據此重讀狀態。 */
   revision: number;
+  /** 來自 App 的提示（階段切換等），每筆只寫進輸出區一次 */
+  notices?: Notice[];
 }
 
 type Pending =
@@ -40,7 +42,7 @@ type Pending =
   | { request: ConfirmRequest; publish: PublishChoice };
 interface Viewer { title: string; text: string }
 
-export function GitPanel({ path, commits, revision }: Props) {
+export function GitPanel({ path, commits, revision, notices = [] }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [branches, setBranches] = useState<GitBranches>(EMPTY_BRANCHES);
@@ -73,6 +75,15 @@ export function GitPanel({ path, commits, revision }: Props) {
     const entry: LogEntry = { id: logId.current, kind, text, ...(detail ? { detail } : {}) };
     setEntries((prev) => [...prev, entry].slice(-MAX_LOG));
   }, []);
+
+  const lastNoticeRef = useRef(0);
+  useEffect(() => {
+    for (const n of notices) {
+      if (n.id <= lastNoticeRef.current) continue;
+      lastNoticeRef.current = n.id;
+      log('hint', n.text);
+    }
+  }, [notices, log]);
 
   const refresh = useCallback(async () => {
     if (!path) { setStatus(null); return; }

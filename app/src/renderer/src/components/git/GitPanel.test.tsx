@@ -336,4 +336,15 @@ describe('GitPanel', () => {
     fireEvent.doubleClick(handle);
     expect(log()).toBe('160px');
   });
+
+  it('writes each new notice into the output log exactly once', async () => {
+    const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} notices={[]} />);
+    await screen.findByText('main');
+    rerender(<GitPanel path={P} commits={[]} revision={0} notices={[{ id: 1, text: '階段 環境搭建 完成 → 產品設計' }]} />);
+    expect((await screen.findByText('階段 環境搭建 完成 → 產品設計')).closest('.out')).toHaveClass('hint');
+    rerender(<GitPanel path={P} commits={[]} revision={0} notices={[{ id: 1, text: '階段 環境搭建 完成 → 產品設計' }]} />);
+    rerender(<GitPanel path={P} commits={[]} revision={0} notices={[{ id: 1, text: '階段 環境搭建 完成 → 產品設計' }, { id: 2, text: '階段 產品設計 完成 → 技術設計' }]} />);
+    expect(await screen.findByText('階段 產品設計 完成 → 技術設計')).toBeInTheDocument();
+    expect(screen.getAllByText(/^階段 /)).toHaveLength(2);
+  });
 });
