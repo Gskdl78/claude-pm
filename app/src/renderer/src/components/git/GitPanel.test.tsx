@@ -255,6 +255,15 @@ describe('GitPanel', () => {
     expect(screen.getByLabelText('切換到')).toBeInTheDocument();
   });
 
+  it('switches to history and opens the commit when revealCommit changes', async () => {
+    git.show.mockResolvedValue('commit abc1234\n\n    feat: x');
+    const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} />);
+    await screen.findByText('main');
+    rerender(<GitPanel path={P} commits={[]} revision={0} revealCommit={{ hash: 'abc1234', seq: 1 }} />);
+    await waitFor(() => expect(git.show).toHaveBeenCalledWith(P, 'abc1234'));
+    expect(screen.getByRole('tab', { name: '歷史' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('shows the error instead of an endless loading message when the first status read fails', async () => {
     git.status.mockRejectedValue(new Error('boom'));
     render(<GitPanel path={P} commits={[]} revision={0} />);
