@@ -42,6 +42,11 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       diff: vi.fn(async () => ''),
       show: vi.fn(async () => ''),
       run: vi.fn(async () => ({ ok: true, code: 0, stdout: '', stderr: '', command: 'git' })),
+      extras: vi.fn(async () => ({ stashes: [], tags: [] })),
+    },
+    gh: {
+      check: vi.fn(async () => ({ installed: false, version: null, authed: false, detail: '' })),
+      repoCreate: vi.fn(async () => ({ ok: false, code: 1, stdout: '', stderr: '', command: 'gh' })),
     },
     pty: {
       start: vi.fn(async () => {}),

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { assertBranch, assertDiffMode, assertHash, assertMessage, assertRelPath, validateGitAction } from './git-validate';
+import {
+  assertBranch, assertDiffMode, assertHash, assertMessage, assertRelPath, assertRemoteUrl, assertRepoName,
+  assertResetMode, assertResetTarget, assertStashIndex, assertStashMessage, assertTagName, validateGitAction,
+} from './git-validate';
 
 describe('assertRelPath', () => {
   it('accepts repo-relative paths including trailing slash, spaces and backslashes', () => {
@@ -47,9 +50,67 @@ describe('validateGitAction', () => {
   it('rejects unknown kinds and bad fields', () => {
     expect(() => validateGitAction(null)).toThrow(/invalid action/);
     expect(() => validateGitAction('push')).toThrow(/invalid action/);
-    expect(() => validateGitAction({ kind: 'reset', mode: 'hard' })).toThrow(/invalid action/);
+    expect(() => validateGitAction({ kind: 'rebase' })).toThrow(/invalid action/);
     expect(() => validateGitAction({ kind: 'switch', branch: '--force' })).toThrow(/invalid branch/);
     expect(() => validateGitAction({ kind: 'stage', file: '../x' })).toThrow(/invalid path/);
     expect(() => validateGitAction({ kind: 'commit', message: '  ' })).toThrow(/invalid message/);
+  });
+
+  it('rebuilds batch-2 actions and rejects their bad fields', () => {
+    expect(validateGitAction({ kind: 'stash' })).toEqual({ kind: 'stash', message: null });
+    expect(validateGitAction({ kind: 'stash', message: '' })).toEqual({ kind: 'stash', message: null });
+    expect(validateGitAction({ kind: 'stash', message: 'wip' })).toEqual({ kind: 'stash', message: 'wip' });
+    expect(validateGitAction({ kind: 'stashPop', index: 2 })).toEqual({ kind: 'stashPop', index: 2 });
+    expect(validateGitAction({ kind: 'stashDrop', index: 0, extra: true })).toEqual({ kind: 'stashDrop', index: 0 });
+    expect(validateGitAction({ kind: 'reset', mode: 'hard', target: 'HEAD~2' })).toEqual({ kind: 'reset', mode: 'hard', target: 'HEAD~2' });
+    expect(validateGitAction({ kind: 'revert', hash: 'abc1234' })).toEqual({ kind: 'revert', hash: 'abc1234' });
+    expect(validateGitAction({ kind: 'tag', name: 'v1' })).toEqual({ kind: 'tag', name: 'v1', hash: null });
+    expect(validateGitAction({ kind: 'tag', name: 'v1', hash: 'abc1234' })).toEqual({ kind: 'tag', name: 'v1', hash: 'abc1234' });
+    expect(validateGitAction({ kind: 'deleteTag', name: 'v1' })).toEqual({ kind: 'deleteTag', name: 'v1' });
+    expect(validateGitAction({ kind: 'abortMerge', x: 1 })).toEqual({ kind: 'abortMerge' });
+    expect(validateGitAction({ kind: 'pullRebase' })).toEqual({ kind: 'pullRebase' });
+    expect(validateGitAction({ kind: 'addRemote', url: 'git@github.com:o/r.git' })).toEqual({ kind: 'addRemote', url: 'git@github.com:o/r.git' });
+    expect(() => validateGitAction({ kind: 'reset', mode: 'hard' })).toThrow(/invalid reset target/);
+    expect(() => validateGitAction({ kind: 'reset', mode: 'wipe', target: 'HEAD~1' })).toThrow(/invalid reset mode/);
+    expect(() => validateGitAction({ kind: 'stashPop', index: '0' })).toThrow(/invalid stash index/);
+    expect(() => validateGitAction({ kind: 'revert', hash: 'HEAD' })).toThrow(/invalid hash/);
+    expect(() => validateGitAction({ kind: 'tag', name: '-d' })).toThrow(/invalid tag name/);
+    expect(() => validateGitAction({ kind: 'addRemote', url: 'ssh://git@github.com/o/r' })).toThrow(/invalid remote url/);
+  });
+});
+
+describe('batch-2 validators', () => {
+  it('accepts HEAD~n or a hash as reset target and the three reset modes', () => {
+    for (const t of ['HEAD~1', 'HEAD~25', 'HEAD~999', 'abc1234', 'ABCDEF0123']) expect(assertResetTarget(t)).toBe(t);
+    const bad: unknown[] = ['', 'HEAD', 'HEAD~0', 'HEAD~1000', 'head~1', 'HEAD^', 'HEAD~1 --hard', '--hard', 'main', 42];
+    for (const t of bad) expect(() => assertResetTarget(t)).toThrow(/invalid reset target/);
+    for (const m of ['soft', 'mixed', 'hard']) expect(assertResetMode(m)).toBe(m);
+    for (const m of ['', 'merge', 'HARD', null]) expect(() => assertResetMode(m)).toThrow(/invalid reset mode/);
+  });
+
+  it('bounds stash indexes and messages, validates tag names', () => {
+    expect(assertStashIndex(0)).toBe(0);
+    expect(assertStashIndex(999)).toBe(999);
+    for (const i of [-1, 1000, 1.5, '0', Number.NaN, null]) expect(() => assertStashIndex(i)).toThrow(/invalid stash index/);
+    expect(assertStashMessage(null)).toBeNull();
+    expect(assertStashMessage(undefined)).toBeNull();
+    expect(assertStashMessage('')).toBeNull();
+    expect(assertStashMessage('wip: 登入')).toBe('wip: 登入');
+    for (const m of ['   ', 'a\nb', 'x'.repeat(201), 'a\0b', 7]) expect(() => assertStashMessage(m)).toThrow(/invalid stash message/);
+    expect(assertTagName('v1.2.0')).toBe('v1.2.0');
+    for (const t of ['', '-d', 'v 1', 'a..b', 'v1.lock']) expect(() => assertTagName(t)).toThrow(/invalid tag name/);
+  });
+
+  it('accepts only https or git@ remote urls without spaces, credentials or control characters', () => {
+    const good = ['https://github.com/o/r.git', 'https://github.com/o/r', 'https://gitlab.example.com:8443/group/sub/r.git', 'git@github.com:o/r.git', 'git@github.com:o/r'];
+    for (const u of good) expect(assertRemoteUrl(u)).toBe(u);
+    const bad: unknown[] = ['', 'http://github.com/o/r', 'ssh://git@github.com/o/r', 'github.com/o/r', 'https://github.com/o/r x', 'https://github.com/o/r\n',
+      'https://user:pw@github.com/o/r', '--upload-pack=calc', 'ext::sh -c calc', 'file:///C:/x', 'git@github.com:o/r;calc', `https://github.com/o/${'r'.repeat(2048)}`, 5];
+    for (const u of bad) expect(() => assertRemoteUrl(u)).toThrow(/invalid remote url/);
+  });
+
+  it('validates GitHub repo names', () => {
+    for (const n of ['claude-pm', 'my_app.v2', 'A']) expect(assertRepoName(n)).toBe(n);
+    for (const n of ['', '-x', '.', '..', 'a b', 'a/b', 'x'.repeat(101), 'ünïcode', 3]) expect(() => assertRepoName(n)).toThrow(/invalid repo name/);
   });
 });
