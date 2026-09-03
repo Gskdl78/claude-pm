@@ -296,3 +296,26 @@ section.center { grid-area: term; display: flex; flex-direction: column; align-i
 .side-head > .muted { flex: 1; min-width: 0; }
 .gear { background: transparent; border: none; padding: 2px 6px; font-size: 14px; }
 .gear:hover { color: var(--accent); border: none; }
+
+/* --- insights ------------------------------------------------------------ */
+.insights { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow: auto; padding: 12px 16px 24px; }
+.insights[hidden] { display: none; }
+.insights-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.insights-filters label { display: flex; align-items: center; gap: 6px; }
+.insights-filters select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; }
+.insights-stats { margin-left: auto; }
+.insight-groups { display: flex; flex-direction: column; gap: 8px; }
+.insight-group { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; background: var(--panel); }
+.insight-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.insight-head .ghost { background: transparent; border-color: transparent; padding: 2px 6px; }
+.insight-cause { font-weight: 600; flex: 1; min-width: 200px; }
+.insight-group .count { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.insight-projects { display: flex; gap: 4px; flex-wrap: wrap; }
+.insight-fixes { margin: 4px 0 0 28px; font-size: 12px; }
+.insight-items { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.insight-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.insight-item .insight-symptom { flex: 1; min-width: 160px; }
+.pinned-notes { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.pinned-notes h3 { margin: 0; font-size: 14px; }
+.pinned-note { display: flex; align-items: center; gap: 8px; }
+.pinned-note span { flex: 1; }
