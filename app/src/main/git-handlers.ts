@@ -1,7 +1,7 @@
 import type { GhCheck, GitAction, GitBranches, GitDiffMode, GitExtras, GitResult, GitStatus } from '../shared/types';
 import { buildGitArgs } from '../shared/git-actions';
 import { assertDiffMode, assertHash, assertRelPath, assertRepoName, validateGitAction } from '../shared/git-validate';
-import { getBranches, getDiff, getExtras, getStatus, hasHead, runGit, showCommit } from './git-run';
+import { getBranches, getDiff, getExtras, getStatus, hasHead, runGit, showCommit, syncRepo } from './git-run';
 import { checkGh, createRepo } from './gh-run';
 
 export interface GitHandlers {
@@ -28,6 +28,9 @@ export function createGitHandlers(guard: (p: string) => string): GitHandlers {
     'git:run': async (path, action) => {
       const dir = guard(path);
       const a = validateGitAction(action);
+      // 同步是多步驟；逐 hunk 的 patch 走 stdin，不進 argv
+      if (a.kind === 'sync') return syncRepo(dir);
+      if (a.kind === 'applyPatch') return runGit(dir, buildGitArgs(a, { hasHead: true }), { input: a.patch });
       const head = NEEDS_HEAD_CHECK.has(a.kind) ? await hasHead(dir) : true;
       return runGit(dir, buildGitArgs(a, { hasHead: head }));
     },

@@ -1,8 +1,9 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { GhCheck, PublishChoice } from '../../../../shared/types';
 import { REMOTE_URL_RE, isValidRepoName } from '../../../../shared/git-validate';
 import { pm } from '../../api';
 import { errorMessage } from '../../errors';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface Props {
   path: string;
@@ -29,6 +30,8 @@ export function PublishWizard({ path, noCommits, busy, onSubmit, onCancel }: Pro
   const [name, setName] = useState(() => defaultRepoName(path));
   const [isPrivate, setIsPrivate] = useState(true);
   const [url, setUrl] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, true);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,10 +53,11 @@ export function PublishWizard({ path, noCommits, busy, onSubmit, onCancel }: Pro
     if (!ready) return;
     onSubmit(effectiveMode === 'create' ? { mode: 'create', name, isPrivate } : { mode: 'url', url });
   };
-  const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+  // 執行中（busy）不讓 Esc 關掉精靈，避免確認流程被中途打斷
+  const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onCancel(); };
 
   return (
-    <div className="dialog" role="dialog" aria-modal="true" aria-label="發佈到 GitHub" onKeyDown={onKeyDown}>
+    <div ref={ref} className="dialog" role="dialog" aria-modal="true" aria-label="發佈到 GitHub" onKeyDown={onKeyDown}>
       <div className="dialog-box wizard">
         <h3>發佈到 GitHub</h3>
         <p className="muted">這個專案還沒連到遠端倉庫。選一種方式，按「下一步」會先顯示將執行的指令再確認。</p>
@@ -80,7 +84,8 @@ export function PublishWizard({ path, noCommits, busy, onSubmit, onCancel }: Pro
           </label>
           {effectiveMode === 'create' && (
             <div className="wizard-fields">
-              <input aria-label="倉庫名稱" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} />
+              {/* 兩種模式各只會掛載一個文字輸入框：掛載的那個就是第一個輸入框，自動聚焦 */}
+              <input aria-label="倉庫名稱" value={name} disabled={busy} autoFocus onChange={(e) => setName(e.target.value)} />
               {name && !nameValid && <div className="error small">{NAME_HINT}</div>}
               <label><input type="radio" name="publish-vis" aria-label="私人" checked={isPrivate} onChange={() => setIsPrivate(true)} /> 私人（只有你看得到）</label>
               <label><input type="radio" name="publish-vis" aria-label="公開" checked={!isPrivate} onChange={() => setIsPrivate(false)} /> 公開（所有人都看得到）</label>
@@ -92,7 +97,7 @@ export function PublishWizard({ path, noCommits, busy, onSubmit, onCancel }: Pro
           </label>
           {effectiveMode === 'url' && (
             <div className="wizard-fields">
-              <input aria-label="倉庫網址" placeholder="https://github.com/你的帳號/倉庫.git" value={url} disabled={busy} onChange={(e) => setUrl(e.target.value.trim())} />
+              <input aria-label="倉庫網址" placeholder="https://github.com/你的帳號/倉庫.git" value={url} disabled={busy} autoFocus onChange={(e) => setUrl(e.target.value.trim())} />
               {url && !urlValid && <div className="error small">{URL_HINT}</div>}
             </div>
           )}

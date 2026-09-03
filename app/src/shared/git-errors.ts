@@ -18,6 +18,11 @@ export const GIT_ERROR_PATTERNS: ReadonlyArray<readonly [string, string]> = [
   ['could not revert', '還原時發生衝突：請手動解決「變更」頁列出的衝突檔案後提交；要放棄還原，請在終端機執行 git revert --abort。'],
   ['stash entry is kept', '取回收藏時發生衝突：請解決「變更」頁列出的衝突檔案後提交（或丟棄變更）；這筆收藏仍保留在清單中。'],
   ['git rebase --continue', '變基時發生衝突：請解決衝突檔案後在終端機執行 git rebase --continue；要放棄，請執行 git rebase --abort。'],
+  ['is a merge but no -m option was given', '這是合併提交，還原需要指定保留哪一邊；面板不支援，請在終端機執行 git revert -m 1 <hash>。'],
+  ['patch does not apply', '這段變更已與目前內容不一致，請重新開啟 diff 再試。'],
+  // 主程序驗證擋下來的輸入：訊息是英文的 Error，這裡翻成使用者看得懂的說明
+  ['invalid patch', '這段變更無法組成合法的 patch，請重新開啟 diff 再試。'],
+  ['invalid clone source', '來源必須是 https:// 或 git@ 網址，或本機既存的資料夾路徑。'],
   ['CONFLICT', '發生合併衝突：兩邊改了同一個地方。衝突檔案已列在「變更」頁，可交給 Claude Code 或手動解決後再提交；要放棄這次合併，請按衝突橫幅上的「中止合併」。'],
   ['Please tell me who you are', '尚未設定 git 使用者名稱與信箱：請在終端機執行 git config --global user.name "你的名字" 與 git config --global user.email "你的信箱"，再重新提交。'],
   ['Authentication failed', AUTH],

@@ -41,9 +41,21 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 3. 實作模型改 sonnet、退回上限改 2 → 新建專案：其 CLAUDE.md 模型政策節顯示 `sonnet` 與「2 次」。
 4. 根目錄改到另一個資料夾：專案清單換成該資料夾內容，原專案關閉。
 
+## 新專案
+
+側欄「+ 新專案」對話框有兩個分頁：
+
+- 「建立空專案」：在根目錄下建立資料夾並以 plugin 的 scaffold 初始化（`.pm/state.json`、CLAUDE.md、階段 skills、第一個 commit）。
+- 「從 URL 複製」：輸入 `https://` 或 `git@主機:帳號/倉庫(.git)` 網址，或本機資料夾的絕對路徑，主程序執行 `git clone -- <來源> <root>/<名稱>`。專案名稱會從網址最後一段自動帶入（去掉 `.git`），改過就不再覆寫；目標資料夾已存在會被拒絕。複製只做 git clone，**不會**自動初始化 pm，之後可在側欄按「初始化」。clone 失敗（找不到倉庫、需要登入、網路）會以白話顯示在對話框裡。
+
+### 手動驗證
+
+1. 「+ 新專案」→「從 URL 複製」→ 貼 `https://github.com/<你>/<倉庫>.git`：名稱自動變成 `<倉庫>`；按「複製」後側欄出現該專案並開啟，右欄 git 面板顯示其分支與歷史，側欄有「初始化」可按。
+2. 來源填一個不存在的本機路徑或 `javascript:` 開頭的字串：按鈕仍可按，但對話框顯示「invalid clone source」類錯誤且不建立資料夾。
+
 ## Git 面板
 
-右欄（360px）是內建的 git 面板：上方是分支狀態與「推送 / 拉取 / 擷取」，中間是「變更 / 分支 / 歷史 / 進階」四個分頁，下方是輸出區。
+右欄（360px）是內建的 git 面板：上方是分支狀態與「推送 / 拉取 / 擷取 / 同步」，中間是「變更 / 分支 / 歷史 / 進階」四個分頁，下方是輸出區。
 
 - 每個會改變狀態的按鈕都先彈出確認框，顯示白話說明與將執行的確切 git 指令；會丟失工作的操作（丟棄、amend、hard reset、stash 丟棄、刪除標籤、中止合併）以紅色危險樣式呈現，焦點預設在「取消」。
 - git 失敗時輸出區顯示繁體中文說明並附原始輸出；對映表在 `src/shared/git-errors.ts`。
@@ -52,6 +64,11 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 - 尚未設定遠端時按「推送 / 拉取」會開啟「發佈到 GitHub」精靈：偵測 GitHub CLI（`gh --version`、`gh auth status`）後可選「新建 GitHub 倉庫」（`gh repo create <名稱> --private|--public --source=. --remote=origin --push`）或「貼現有倉庫網址」（`git remote add origin <網址>` + `git push -u origin HEAD`；只接受 `https://` 或 `git@主機:帳號/倉庫`）。推送被拒時面板提示「先擷取」或「拉取（變基）」，不提供強制推送。
 - `gh` 與 git 一樣在主程序以 `execFile` 執行，argv 只有三種白名單；倉庫名稱與網址都先驗證。
 - 所有 git 都在主程序以 `execFile('git', argv)` 執行，路徑必須位於專案根目錄之內，檔案路徑、分支名、hash、訊息都經驗證後才組成 argv。
+- 逐段暫存：在「變更」頁點檔名開 diff，未暫存檔案的每個 hunk 標頭右側有「暫存此段」，已暫存的有「取消暫存此段」；按下後 renderer 把該段組成單檔 patch，主程序以 `git apply --cached [-R] --whitespace=nowarn -`（patch 走 stdin）套進索引，不彈確認（與 `+` / `−` 同級），完成後重讀同一份 diff，沒剩就自動關閉。新檔案（untracked）、二進位檔與被截斷的超長 diff 不提供逐段操作。patch 在主程序驗證：≤ 1 MB、無 NUL、以 `diff --git a/` 開頭、`---` / `+++` 路徑只能是 `/dev/null` 或 repo 內相對路徑。
+- commit 前綴：訊息框上方有一列前綴按鈕 `chore(env): docs(design): docs(tech): feat: fix: test: fix(security): fix(verify):`，目前階段對應的前綴高亮（env→`chore(env):`、design→`docs(design):`、tech→`docs(tech):`、build→`feat:`、verify→`fix(verify):`、done→`feat:`）。點任一前綴插入到訊息開頭；訊息已有某個候選前綴時改為替換，不會重複。
+- 「同步」：與獨立版 git-panel 相同的一鍵流程 —— 目前分支沒有上游就直接 `git push -u origin HEAD`；有上游先 `git pull --rebase`，成功（或遠端還沒有這個分支）再 `git push -u origin HEAD`；pull 失敗（例如衝突）就停在那裡，輸出區顯示白話說明。沒有遠端時停用。
+- 推送被拒的黃色提示列只在「推送 / 拉取 / 拉取（變基）/ 同步 / 發佈」成功後清除；「擷取」不會清（擷取不改變落後狀態）。
+- 所有對話框（確認框、diff、發佈精靈、設定、session 上限、新專案）都有 focus trap：Tab / Shift+Tab 只在對話框內循環；發佈精靈開啟時第一個輸入框自動聚焦，Esc 關閉（執行中除外）。還原「合併提交」失敗時會提示需在終端機執行 `git revert -m 1 <hash>`。
 
 ### 手動驗收清單（批次一）
 
@@ -78,6 +95,16 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 8. 精靈「貼現有倉庫網址」：貼 `http://…` 顯示不合法；貼 `https://github.com/<你>/<空倉庫>.git` → 下一步 → 確認框兩行指令 → 執行後「無遠端」pill 消失、輸出區兩個「完成 ✓」。
 9. 已安裝並登入 gh：精靈「新建」預設倉庫名 = 資料夾名、私人 → 確認框 `gh repo create … --private --source=. --remote=origin --push` → 執行後 GitHub 上出現倉庫、狀態列 `→ origin/main`。
 10. 在 GitHub 網頁上對倉庫多加一個 commit，再按「推送」：輸出區白話「推送被拒」，狀態列下方出現黃色提示列，只有「先擷取」「拉取（變基）」，沒有任何強制推送；「拉取（變基）」確認 `git pull --rebase` 後再推送成功、提示列消失。
+
+### 手動驗收清單（批次三：git 面板完整化）
+
+1. 改同一個檔案相隔很遠的兩處 → 「變更」頁點檔名開 diff：兩個 hunk 各有「暫存此段」；按第二個 → 沒有確認框、輸出區 `> git apply --cached --whitespace=nowarn -` 與「完成 ✓」、diff 視窗只剩第一段、檔案同時出現在「已暫存」與「未暫存」。再開已暫存的 diff → 「取消暫存此段」→ 視窗自動關閉、檔案回到只在「未暫存」。
+2. 新增一個檔案（untracked）與一個二進位檔，各開 diff：沒有逐段按鈕。
+3. 專案在 design 階段：commit 訊息框上方 `docs(design):` 高亮；輸入「更新 PRD」後點 `docs(design):` → 訊息變 `docs(design): 更新 PRD`；再點 `fix:` → 變 `fix: 更新 PRD`（不重複）。
+4. 有遠端且遠端多一個 commit、本地也多一個 commit：按「同步」→ 確認框標題「確認：同步」、指令 `git pull --rebase && git push -u origin HEAD` → 執行後 `↑ ↓` 都歸零、歷史含雙方 commit。沒有上游的新分支按「同步」→ 直接推送並建立追蹤。
+5. 推送被拒出現黃色提示列後按「先擷取」：提示列仍在；再按「拉取（變基）」成功後提示列消失。
+6. 開任一對話框連按 Tab：焦點只在對話框內循環；「發佈到 GitHub」精靈開啟時游標已在第一個輸入框，按 Esc 直接關閉。
+7. 「歷史」對一筆合併提交按「還原」：輸出區顯示「這是合併提交…請在終端機執行 git revert -m 1 <hash>」。
 
 ## 階段按鈕與等待輸入通知
 

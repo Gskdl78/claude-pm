@@ -15,6 +15,7 @@ const api: PmApi = {
   checkClaude: () => ipcRenderer.invoke('claude:check'),
   listProjects: () => ipcRenderer.invoke('projects:list'),
   createProject: (name) => ipcRenderer.invoke('projects:create', name),
+  cloneProject: (source, name) => ipcRenderer.invoke('projects:clone', source, name),
   initProject: (path) => ipcRenderer.invoke('projects:init', path),
   openProject: (path) => ipcRenderer.invoke('projects:open', path),
   rebuildState: (path) => ipcRenderer.invoke('projects:rebuild', path),

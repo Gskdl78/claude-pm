@@ -2,12 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CommitBox } from './CommitBox';
+import { COMMIT_PREFIXES } from '../../../../shared/commit-prefix';
 
 /** CommitBox 的輸入由上層保管，測試用這個小殼提供狀態。 */
 function Host(props: { busy: boolean; stagedCount: number; noCommits: boolean; onCommit: (m: string, a: boolean) => void }) {
   const [message, setMessage] = useState('');
   const [amend, setAmend] = useState(false);
-  return <CommitBox {...props} message={message} amend={amend} onMessageChange={setMessage} onAmendChange={setAmend} />;
+  return <CommitBox {...props} stage={null} message={message} amend={amend} onMessageChange={setMessage} onAmendChange={setAmend} />;
 }
 
 describe('CommitBox', () => {
@@ -45,7 +46,7 @@ describe('CommitBox', () => {
     const onCommit = vi.fn();
     const onMessageChange = vi.fn();
     const onAmendChange = vi.fn();
-    render(<CommitBox busy={false} stagedCount={1} noCommits={false} message="feat: kept" amend
+    render(<CommitBox busy={false} stagedCount={1} noCommits={false} stage={null} message="feat: kept" amend
       onMessageChange={onMessageChange} onAmendChange={onAmendChange} onCommit={onCommit} />);
     expect(screen.getByLabelText('commit 訊息')).toHaveValue('feat: kept');
     expect(screen.getByLabelText('修改上一次提交')).toBeChecked();
@@ -53,5 +54,33 @@ describe('CommitBox', () => {
     expect(onMessageChange).toHaveBeenCalledWith('feat: typed');
     fireEvent.click(screen.getByLabelText('修改上一次提交'));
     expect(onAmendChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('CommitBox prefix row', () => {
+  it('highlights the prefix of the current stage and inserts or replaces a prefix on click', () => {
+    const onMessageChange = vi.fn();
+    const { rerender } = render(<CommitBox busy={false} stagedCount={1} noCommits={false} stage="design" message="update prd"
+      amend={false} onMessageChange={onMessageChange} onAmendChange={() => {}} onCommit={() => {}} />);
+    expect(screen.getByRole('button', { name: 'docs(design):' })).toHaveClass('primary');
+    expect(screen.getByRole('button', { name: 'feat:' })).not.toHaveClass('primary');
+    fireEvent.click(screen.getByRole('button', { name: 'fix:' }));
+    expect(onMessageChange).toHaveBeenCalledWith('fix: update prd');
+
+    rerender(<CommitBox busy={false} stagedCount={1} noCommits={false} stage="build" message="feat: add login"
+      amend={false} onMessageChange={onMessageChange} onAmendChange={() => {}} onCommit={() => {}} />);
+    expect(screen.getByRole('button', { name: 'feat:' })).toHaveClass('primary');
+    fireEvent.click(screen.getByRole('button', { name: 'test:' }));
+    expect(onMessageChange).toHaveBeenLastCalledWith('test: add login');
+
+    // 沒有 state（stage 為 null）：不高亮任何前綴，但按鈕仍可用
+    rerender(<CommitBox busy={false} stagedCount={1} noCommits={false} stage={null} message=""
+      amend={false} onMessageChange={onMessageChange} onAmendChange={() => {}} onCommit={() => {}} />);
+    for (const p of COMMIT_PREFIXES) expect(screen.getByRole('button', { name: p.trim() })).not.toHaveClass('primary');
+
+    rerender(<CommitBox busy stagedCount={1} noCommits={false} stage="build" message=""
+      amend={false} onMessageChange={onMessageChange} onAmendChange={() => {}} onCommit={() => {}} />);
+    expect(screen.getByRole('button', { name: 'feat:' })).toHaveClass('primary');
+    expect(screen.getByRole('button', { name: 'feat:' })).toBeDisabled();
   });
 });

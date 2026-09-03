@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 export interface ConfirmRequest {
   title: string;
@@ -16,12 +17,15 @@ interface Props {
 
 export function ConfirmDialog({ request, onConfirm, onCancel }: Props) {
   const focusRef = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // 先把焦點放到預設按鈕，focus trap 才不會改聚焦第一個元素
   useEffect(() => { if (request) focusRef.current?.focus(); }, [request]);
+  useFocusTrap(rootRef, request !== null);
   if (!request) return null;
   const { title, description, command, danger } = request;
   const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
   return (
-    <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="git-confirm-title" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby="git-confirm-title" onKeyDown={onKeyDown}>
       <div className={`dialog-box confirm${danger ? ' danger' : ''}`}>
         <h3 id="git-confirm-title">確認：{title}</h3>
         <p className="confirm-desc">{description}</p>

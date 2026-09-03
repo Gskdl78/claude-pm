@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   assertBranch, assertDiffMode, assertHash, assertMessage, assertRelPath, assertRemoteUrl, assertRepoName,
   assertResetMode, assertResetTarget, assertStashIndex, assertStashMessage, assertTagName, validateGitAction,
+  assertPatch, MAX_PATCH,
 } from './git-validate';
 
 describe('assertRelPath', () => {
@@ -127,5 +128,67 @@ describe('commitPaths validation', () => {
     expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: ['../a'] })).toThrow(/invalid path/);
     expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: Array(101).fill('a') })).toThrow(/invalid paths/);
     expect(() => validateGitAction({ kind: 'commitPaths', message: ' ', paths: ['a'] })).toThrow(/invalid message/);
+  });
+});
+
+describe('assertPatch / applyPatch / sync validation', () => {
+  const PATCH = ['diff --git a/src/a.ts b/src/a.ts', 'index 1111111..2222222 100644', '--- a/src/a.ts', '+++ b/src/a.ts', '@@ -1 +1 @@', '-a', '+b', ''].join('\n');
+  it('accepts a well-formed single-file patch, including /dev/null sides', () => {
+    expect(assertPatch(PATCH)).toBe(PATCH);
+    const created = 'diff --git a/n.txt b/n.txt\nnew file mode 100644\n--- /dev/null\n+++ b/n.txt\n@@ -0,0 +1 @@\n+x\n';
+    expect(assertPatch(created)).toBe(created);
+  });
+  it('rejects non-strings, oversized, NUL, wrong header and escaping paths', () => {
+    expect(() => assertPatch(42)).toThrow(/invalid patch/);
+    expect(() => assertPatch('')).toThrow(/invalid patch/);
+    expect(() => assertPatch(PATCH + 'x'.repeat(MAX_PATCH))).toThrow(/invalid patch/);
+    expect(() => assertPatch(PATCH.replace('-a', '-a\0'))).toThrow(/invalid patch/);
+    expect(() => assertPatch('--- a/x\n+++ b/x\n')).toThrow(/invalid patch/);
+    expect(() => assertPatch(PATCH.replace('+++ b/src/a.ts', '+++ b/../x'))).toThrow(/invalid path/);
+    expect(() => assertPatch(PATCH.replace('--- a/src/a.ts', '--- C:/x'))).toThrow(/invalid patch/);
+  });
+  it('rebuilds applyPatch (reverse must be exactly true) and sync', () => {
+    expect(validateGitAction({ kind: 'applyPatch', patch: PATCH, reverse: 'yes' })).toEqual({ kind: 'applyPatch', patch: PATCH, reverse: false });
+    expect(validateGitAction({ kind: 'applyPatch', patch: PATCH, reverse: true })).toEqual({ kind: 'applyPatch', patch: PATCH, reverse: true });
+    expect(() => validateGitAction({ kind: 'applyPatch', patch: 'nope', reverse: false })).toThrow(/invalid patch/);
+    expect(validateGitAction({ kind: 'sync', extra: 1 })).toEqual({ kind: 'sync' });
+  });
+});
+
+describe('assertPatch (header-only validation and hardening)', () => {
+  const head = (a = 'src/a.ts', b = a) => `diff --git a/${a} b/${b}\nindex 1111111..2222222 100644\n--- a/${a}\n+++ b/${b}\n`;
+
+  it('accepts hunk content lines that look like patch headers', () => {
+    // 刪掉 .sql 的 `-- 註解` 就會產生內容行 `--- 註解`；只驗檔頭區才不會被誤判
+    const sql = `${head('db/schema.sql')}@@ -1,3 +1,2 @@\n--- header comment\n-- keep\n+++ x\n`;
+    expect(assertPatch(sql)).toBe(sql);
+    const plus = `${head()}@@ -1 +1,2 @@\n+++ x\n ctx\n`;
+    expect(assertPatch(plus)).toBe(plus);
+  });
+
+  it('accepts a rename patch whose paths are legitimate', () => {
+    const rename = 'diff --git a/old.ts b/new.ts\nsimilarity index 90%\nrename from old.ts\nrename to new.ts\n--- a/old.ts\n+++ b/new.ts\n@@ -1 +1 @@\n-a\n+b\n';
+    expect(assertPatch(rename)).toBe(rename);
+  });
+
+  it('rejects multi-file patches and patches without a hunk', () => {
+    const two = `${head('a.ts')}@@ -1 +1 @@\n-a\n+b\n${head('b.ts')}@@ -1 +1 @@\n-c\n+d\n`;
+    expect(() => assertPatch(two)).toThrow(/invalid patch/);
+    expect(() => assertPatch(head())).toThrow(/invalid patch/);
+    expect(() => assertPatch('diff --git a/x b/x\nBinary files a/x and b/x differ\n')).toThrow(/invalid patch/);
+  });
+
+  it('rejects binary patches, symlink / submodule modes and escaping diff --git, rename and copy paths', () => {
+    expect(() => assertPatch('diff --git a/x b/x\nindex 111..222 100644\nGIT binary patch\n@@ -1 +1 @@\n-a\n+b\n')).toThrow(/invalid patch/);
+    for (const mode of ['new file mode 120000', 'old mode 120000', 'new mode 120000', 'deleted file mode 120000', 'new file mode 160000']) {
+      expect(() => assertPatch(`diff --git a/x b/x\n${mode}\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n`)).toThrow(/invalid patch/);
+    }
+    expect(() => assertPatch(`${head('../escape.ts')}@@ -1 +1 @@\n-a\n+b\n`)).toThrow(/invalid path/);
+    expect(() => assertPatch(`${head('a.ts', '../escape.ts')}@@ -1 +1 @@\n-a\n+b\n`)).toThrow(/invalid path/);
+    expect(() => assertPatch('diff --git a/old.ts b/new.ts\nrename from ../old.ts\nrename to new.ts\n@@ -1 +1 @@\n-a\n+b\n')).toThrow(/invalid path/);
+    expect(() => assertPatch('diff --git a/old.ts b/new.ts\ncopy from old.ts\ncopy to /etc/passwd\n@@ -1 +1 @@\n-a\n+b\n')).toThrow(/invalid path/);
+    // assertRelPath 本身允許 .git/config；patch 不該碰版本庫內部（不分大小寫）
+    expect(() => assertPatch(`${head('.git/config')}@@ -1 +1 @@\n-a\n+b\n`)).toThrow(/invalid patch/);
+    expect(() => assertPatch(`${head('.GIT/hooks/pre-commit')}@@ -1 +1 @@\n-a\n+b\n`)).toThrow(/invalid patch/);
   });
 });

@@ -161,3 +161,32 @@ describe('git handlers', () => {
     expect(git(dir, 'remote', 'get-url', 'origin').trim()).toBe('https://github.com/o/r.git');
   });
 });
+
+describe('git handlers (applyPatch / sync)', () => {
+  it('applyPatch feeds the patch through stdin and sync runs pull --rebase then push', async () => {
+    const { dir, h } = setup();
+    await h['git:run'](dir, { kind: 'init' });
+    writeFileSync(join(dir, 'a.txt'), 'one\n');
+    await h['git:run'](dir, { kind: 'stageAll' });
+    await h['git:run'](dir, { kind: 'commit', message: 'first', amend: false });
+    writeFileSync(join(dir, 'a.txt'), 'two\n');
+    const patch = await h['git:diff'](dir, 'a.txt', 'unstaged');
+    expect(patch.startsWith('diff --git a/a.txt b/a.txt')).toBe(true);
+    const applied = await h['git:run'](dir, { kind: 'applyPatch', patch, reverse: false });
+    expect(applied).toMatchObject({ ok: true, command: 'git apply --cached --whitespace=nowarn -' });
+    expect((await h['git:status'](dir)).files[0]).toMatchObject({ path: 'a.txt', staged: true, unstaged: false });
+    const reversed = await h['git:run'](dir, { kind: 'applyPatch', patch, reverse: true });
+    expect(reversed).toMatchObject({ ok: true, command: 'git apply --cached -R --whitespace=nowarn -' });
+    expect((await h['git:status'](dir)).files[0]).toMatchObject({ path: 'a.txt', staged: false, unstaged: true });
+
+    const bare = mkdtempSync(join(tmpdir(), 'pm-bare-'));
+    git(bare, 'init', '--bare', '-b', 'main');
+    git(dir, 'remote', 'add', 'origin', bare);
+    git(dir, 'push', '-q', '-u', 'origin', 'main');
+    await h['git:run'](dir, { kind: 'stageAll' });
+    await h['git:run'](dir, { kind: 'commit', message: 'second', amend: false });
+    const synced = await h['git:run'](dir, { kind: 'sync' });
+    expect(synced).toMatchObject({ ok: true, command: 'git pull --rebase && git push -u origin HEAD' });
+    expect(git(bare, 'log', '--format=%s', 'main')).toMatch(/second/);
+  });
+});

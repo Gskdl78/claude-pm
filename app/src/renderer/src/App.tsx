@@ -12,6 +12,7 @@ import type { SessionState } from './components/Terminal';
 import { SessionLimitDialog } from './components/SessionLimitDialog';
 import { isDocRelPath } from '../../shared/docs-path';
 import { errorMessage } from './errors';
+import { explainGitError } from '../../shared/git-errors';
 import { ClaudeMissing } from './components/ClaudeMissing';
 import { SettingsDialog, type SettingsSubmit } from './components/SettingsDialog';
 
@@ -277,6 +278,23 @@ export default function App() {
     }
   };
 
+  // 從網址或本機路徑複製：主程序只做 git clone，不初始化 pm；開啟後側欄仍可按「初始化」。
+  const handleClone = async (source: string, name: string) => {
+    setDialogBusy(true); setDialogError(null);
+    try {
+      const info = await pm.cloneProject(source, name);
+      await refreshProjects();
+      setDialogOpen(false);
+      await openProject(info);
+    } catch (e) {
+      // git clone 與來源驗證的錯誤都是英文（invalid clone source…），先過錯誤對映表
+      const text = errorMessage(e);
+      setDialogError(explainGitError(text) ?? text);
+    } finally {
+      setDialogBusy(false);
+    }
+  };
+
   const handleInit = async (p: ProjectInfo) => {
     setError(null);
     try {
@@ -412,9 +430,9 @@ export default function App() {
         insightsRevision={insightsRevision} onRevealCommit={(p, h) => { void handleRevealCommit(p, h); }} />
       <aside className="git">
         <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight}
-          revealCommit={revealCommit} />
+          revealCommit={revealCommit} stage={current?.state?.stage ?? null} />
       </aside>
-      <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
+      <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onClone={handleClone} onCancel={() => setDialogOpen(false)} />
       <ConfirmDialog
         request={closeReq ? {
           title: '關閉 session',

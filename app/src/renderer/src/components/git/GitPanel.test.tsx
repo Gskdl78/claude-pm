@@ -9,6 +9,7 @@ const gh = vi.hoisted(() => ({ check: vi.fn(), repoCreate: vi.fn() }));
 vi.mock('../../api', () => ({ pm: { git, gh } }));
 
 import { GitPanel } from './GitPanel';
+import { buildHunkPatch, splitHunks } from '../../../../shared/diff-hunks';
 
 const P = 'C:\\P\\alpha';
 const P2 = 'C:\\P\\beta';
@@ -372,5 +373,88 @@ describe('GitPanel', () => {
     // 換專案會重新挂載面板內容，等新專案的狀態讀完再查輸出區
     await screen.findByText('main');
     expect(await screen.findByText('階段 環境搭建 完成 → 產品設計')).toBeInTheDocument();
+  });
+});
+
+const TWO_HUNKS = [
+  'diff --git a/a.txt b/a.txt', 'index 1111111..2222222 100644', '--- a/a.txt', '+++ b/a.txt',
+  '@@ -1,2 +1,3 @@', ' one', '+added', ' two',
+  '@@ -10,2 +11,2 @@', '-old', '+new', ' tail',
+].join('\n') + '\n';
+
+describe('GitPanel (git panel polish)', () => {
+  it('stages a single hunk from the diff view without confirmation, re-reads the diff and closes it when empty', async () => {
+    git.status.mockResolvedValue(st({ files: [unstagedFile] }));
+    git.diff.mockResolvedValueOnce(TWO_HUNKS);
+    render(<GitPanel path={P} commits={[]} revision={0} stage={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'a.txt' }));
+    const dialog = await screen.findByRole('dialog', { name: '差異：a.txt' });
+    expect(git.diff).toHaveBeenCalledWith(P, 'a.txt', 'unstaged');
+    const diffCalls = git.diff.mock.calls.length;
+    fireEvent.click(within(dialog).getAllByRole('button', { name: '暫存此段' })[1]!);
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, {
+      kind: 'applyPatch', patch: buildHunkPatch(splitHunks(TWO_HUNKS), 1), reverse: false,
+    }));
+    expect(screen.queryByText(/^確認：/)).not.toBeInTheDocument();
+    await waitFor(() => expect(git.diff.mock.calls.length).toBeGreaterThan(diffCalls));
+    // 重讀的必須是同一個檔案與同一種 diff，否則會拿別份內容覆蓋 viewer
+    expect(git.diff).toHaveBeenLastCalledWith(P, 'a.txt', 'unstaged');
+    // 重讀回空字串（沒有剩餘差異）→ 關閉 diff 視窗
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '差異：a.txt' })).not.toBeInTheDocument());
+    expect(screen.getByText('> git applyPatch')).toBeInTheDocument();
+  });
+
+  it('keeps the diff view open with the remaining hunks and unstages from a staged diff', async () => {
+    git.status.mockResolvedValue(st({ files: [stagedFile] }));
+    const rest = TWO_HUNKS.split('\n').slice(0, 8).join('\n') + '\n';
+    git.diff.mockResolvedValueOnce(TWO_HUNKS).mockResolvedValueOnce(rest);
+    render(<GitPanel path={P} commits={[]} revision={0} stage={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'a.txt' }));
+    const dialog = await screen.findByRole('dialog', { name: '差異：a.txt' });
+    expect(git.diff).toHaveBeenCalledWith(P, 'a.txt', 'staged');
+    fireEvent.click(within(dialog).getAllByRole('button', { name: '取消暫存此段' })[1]!);
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, expect.objectContaining({ kind: 'applyPatch', reverse: true })));
+    await waitFor(() => expect(within(dialog).getAllByRole('button', { name: '取消暫存此段' })).toHaveLength(1));
+    expect(screen.getByRole('dialog', { name: '差異：a.txt' })).toBeInTheDocument();
+    expect(git.diff).toHaveBeenLastCalledWith(P, 'a.txt', 'staged');
+  });
+
+  it('runs sync after a confirmation that names the full command', async () => {
+    render(<GitPanel path={P} commits={[]} revision={0} stage={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: '同步' }));
+    expect(await screen.findByText('確認：同步')).toBeInTheDocument();
+    expect(screen.getByText('git pull --rebase && git push -u origin HEAD')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'sync' }));
+  });
+
+  it('disables sync without a remote', async () => {
+    git.status.mockResolvedValue(st({ hasRemote: false, upstream: null }));
+    render(<GitPanel path={P} commits={[]} revision={0} stage={null} />);
+    expect(await screen.findByRole('button', { name: '同步' })).toBeDisabled();
+  });
+
+  it('keeps the rejected banner after a successful fetch and clears it after pull --rebase', async () => {
+    git.run.mockImplementation(async (_p: string, a: { kind: string }) => (a.kind === 'push'
+      ? { ok: false, code: 1, stdout: '', stderr: '! [rejected] main -> main (fetch first)', command: 'git push -u origin HEAD' }
+      : ok(`git ${a.kind}`)));
+    render(<GitPanel path={P} commits={[]} revision={0} stage={null} />);
+    fireEvent.click(await screen.findByRole('button', { name: '推送' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    const bar = await screen.findByRole('status');
+    fireEvent.click(within(bar).getByRole('button', { name: '先擷取' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'fetch' }));
+    await screen.findByText('> git fetch');
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole('button', { name: '拉取（變基）' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'pullRebase' }));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+
+  it('hands the stage down to the commit box prefix row', async () => {
+    render(<GitPanel path={P} commits={[]} revision={0} stage="build" />);
+    expect(await screen.findByRole('button', { name: 'feat:' })).toHaveClass('primary');
+    expect(screen.getByRole('button', { name: 'docs(design):' })).not.toHaveClass('primary');
   });
 });

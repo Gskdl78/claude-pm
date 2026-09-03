@@ -15,6 +15,8 @@ export const MAX_URL = 2048;
 export const REPO_NAME_RE = /^(?!-)[A-Za-z0-9._-]{1,100}$/;
 export const MAX_STASH_INDEX = 999;
 export const MAX_STASH_MESSAGE = 200;
+/** 逐 hunk 暫存的 patch 上限；diff 本身已被 clip 在 512 KB，超過就不是面板切出來的。 */
+export const MAX_PATCH = 1024 * 1024;
 
 function str(v: unknown, what: string): string {
   if (typeof v !== 'string' || v.length === 0 || v.includes('\0')) throw new Error(`invalid ${what}`);
@@ -109,6 +111,52 @@ export function assertRepoName(v: unknown): string {
   return n;
 }
 
+/** diff --git a/<x> b/<y>：git 取 rename / copy / 新建路徑的來源，兩邊都要驗。貪婪比對讓含空白的檔名也切得對。 */
+const DIFF_GIT_RE = /^diff --git a\/(.+) b\/(.+)$/;
+/** rename / copy 的來源與目的（不帶 a/ b/ 前綴）。 */
+const RENAME_COPY_RE = /^(?:rename|copy) (?:from|to) (.+)$/;
+/** 120000 = symlink、160000 = gitlink（submodule）；面板逐段暫存只需要一般檔案。 */
+const SPECIAL_MODE_RE = /^(?:new file mode|old mode|new mode|deleted file mode) 1[26]0000$/;
+
+/** patch 裡的路徑：assertRelPath 之外再拒絕以 .git 為首段（不分大小寫），patch 不該碰版本庫內部。 */
+function assertPatchPath(v: string): string {
+  const p = assertRelPath(v);
+  if (p.split(/[\\/]/)[0]?.toLowerCase() === '.git') throw new Error('invalid patch');
+  return p;
+}
+
+/**
+ * 單檔 patch（renderer 由 diff 文字切出的一段）：≤ MAX_PATCH、無 NUL、以 diff --git a/ 開頭、
+ * 至少一個 @@，且只含一個檔案。路徑驗證只看第一個 @@ 之前的檔頭區：hunk 內容行本身可能長得像
+ * --- / +++（例如刪掉 .sql 的 `-- 註解` 會產生 `--- 註解`），拿去當路徑驗會誤判。
+ * 另外擋掉面板不需要、卻會擴大能力的形狀：二進位 patch、symlink / submodule 模式。
+ */
+export function assertPatch(v: unknown): string {
+  const p = str(v, 'patch');
+  if (p.length > MAX_PATCH || !p.startsWith('diff --git a/')) throw new Error('invalid patch');
+  const lines = p.split('\n').map((l) => l.replace(/\r$/, ''));
+  // 單檔不變式：第二個 diff --git 表示多檔 patch，會連帶動到別的檔案
+  if (lines.slice(1).some((l) => l.startsWith('diff --git '))) throw new Error('invalid patch');
+  const at = lines.findIndex((l) => l.startsWith('@@'));
+  if (at < 0) throw new Error('invalid patch');
+  const paths = DIFF_GIT_RE.exec(lines[0]!);
+  if (!paths) throw new Error('invalid patch');
+  assertPatchPath(paths[1]!);
+  assertPatchPath(paths[2]!);
+  for (const line of lines.slice(1, at)) {
+    if (line.startsWith('GIT binary patch') || SPECIAL_MODE_RE.test(line)) throw new Error('invalid patch');
+    const rc = RENAME_COPY_RE.exec(line);
+    if (rc) { assertPatchPath(rc[1]!); continue; }
+    const m = /^(---|\+\+\+) (.*)$/.exec(line);
+    if (!m) continue;
+    const target = m[2]!;
+    if (target === '/dev/null') continue;
+    if (!/^[ab]\//.test(target)) throw new Error('invalid patch');
+    assertPatchPath(target.slice(2));
+  }
+  return p;
+}
+
 /** renderer 傳來的 action 是不可信輸入：只接受白名單 kind，並重建一個乾淨物件。 */
 export function validateGitAction(v: unknown): GitAction {
   if (!v || typeof v !== 'object') throw new Error('invalid action');
@@ -138,6 +186,8 @@ export function validateGitAction(v: unknown): GitAction {
     case 'deleteTag': return { kind: 'deleteTag', name: assertTagName(a.name) };
     case 'addRemote': return { kind: 'addRemote', url: assertRemoteUrl(a.url) };
     case 'commitPaths': return { kind: 'commitPaths', message: assertMessage(a.message), paths: assertRelPaths(a.paths) };
+    case 'applyPatch': return { kind: 'applyPatch', patch: assertPatch(a.patch), reverse: a.reverse === true };
+    case 'sync': return { kind: 'sync' };
     default: throw new Error('invalid action');
   }
 }

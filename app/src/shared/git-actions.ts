@@ -18,6 +18,9 @@ export const RESET_MODES: Record<GitResetMode, string> = {
   hard: '完全丟棄！檔案內容也會退回，之後的變更全部消失',
 };
 
+/** 同步是多步驟（pull --rebase → push），由主程序的 syncRepo 執行；顯示與結果都用這一份字串。 */
+export const SYNC_COMMAND = 'git pull --rebase && git push -u origin HEAD';
+
 /** 動作 → git argv。renderer 用它預覽指令，主程序用同一份執行，保證兩者一致。 */
 export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
   switch (a.kind) {
@@ -47,6 +50,9 @@ export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
     case 'abortMerge': return ['merge', '--abort'];
     case 'addRemote': return ['remote', 'add', 'origin', a.url];
     case 'commitPaths': return ['commit', '-m', a.message, '--', ...a.paths];
+    case 'applyPatch': return ['apply', '--cached', ...(a.reverse ? ['-R'] : []), '--whitespace=nowarn', '-'];
+    // sync 沒有單一 argv：主程序走 syncRepo，顯示用 SYNC_COMMAND。回半條指令只會誤導呼叫者
+    case 'sync': throw new Error('sync is executed by syncRepo');
   }
 }
 
@@ -120,6 +126,10 @@ export function describeGitAction(a: GitAction, st: GitStatus): ConfirmSpec | nu
       return { title: '中止合併', description: '放棄這次合併，工作目錄與索引回到合併前的狀態；合併過程中手動改過的衝突檔案會被還原。', danger: false };
     case 'addRemote':
       return { title: '設定遠端', description: `把這個專案連到 ${a.url}（遠端名稱 origin）。`, danger: false };
+    case 'applyPatch':
+      return null;
+    case 'sync':
+      return { title: '同步', description: '先從遠端拉取並變基，再推送目前分支；還沒有上游分支時直接推送並建立追蹤。若有衝突需要手動解決。', danger: false };
     case 'commitPaths':
       return { title: '提交檔案', description: `只提交下列檔案的目前內容（不動其他已暫存的變更）：${a.paths.join('、')}。訊息：「${a.message}」。`, danger: false };
   }

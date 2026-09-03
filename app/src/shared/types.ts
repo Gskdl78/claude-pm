@@ -169,7 +169,11 @@ export type GitAction =
   | { kind: 'deleteTag'; name: string }
   | { kind: 'abortMerge' }
   | { kind: 'addRemote'; url: string }
-  | { kind: 'commitPaths'; message: string; paths: string[] };
+  | { kind: 'commitPaths'; message: string; paths: string[] }
+  /** 把一段 patch 套進索引（逐 hunk 暫存 / 取消暫存）；patch 走 stdin */
+  | { kind: 'applyPatch'; patch: string; reverse: boolean }
+  /** 拉取（變基）後推送；沒有上游時直接推送並建立追蹤。主程序以 syncRepo 多步驟執行 */
+  | { kind: 'sync' };
 
 export interface GitApi {
   status(path: string): Promise<GitStatus>;
@@ -201,6 +205,8 @@ export interface PmApi {
   checkClaude(): Promise<ClaudeCheck>;
   listProjects(): Promise<ProjectInfo[]>;
   createProject(name: string): Promise<ProjectInfo>;
+  /** 從 https / git@ 網址或本機目錄 git clone 到 root/<name>；不自動初始化 pm */
+  cloneProject(source: string, name: string): Promise<ProjectInfo>;
   initProject(path: string): Promise<ProjectInfo>;
   openProject(path: string): Promise<ProjectInfo>;
   rebuildState(path: string): Promise<ProjectInfo>;

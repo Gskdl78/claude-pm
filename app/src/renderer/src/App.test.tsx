@@ -31,8 +31,8 @@ vi.mock('./components/insights/InsightsView', () => ({
 // App 在每個測試才動態 import，所以 doMock 必須在 renderApp 之前呼叫。
 function mockGitPanel() {
   vi.doMock('./components/git/GitPanel', () => ({
-    GitPanel: ({ notices, revealCommit }: { notices?: Array<{ id: number; text: string }>; revealCommit?: { hash: string; seq: number } | null }) => (
-      <div data-testid="git-panel">
+    GitPanel: ({ notices, revealCommit, stage }: { notices?: Array<{ id: number; text: string }>; revealCommit?: { hash: string; seq: number } | null; stage?: string | null }) => (
+      <div data-testid="git-panel" data-stage={stage ?? ''}>
         {(notices ?? []).map((n) => <div key={n.id} className="notice">{n.text}</div>)}
         <div className="reveal">{revealCommit?.hash}</div>
       </div>
@@ -70,6 +70,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
     checkClaude: vi.fn(async () => ({ ok: true, path: 'claude' })),
     listProjects: vi.fn(async () => [project('alpha')]),
     createProject: vi.fn(async (name: string) => project(name)),
+    cloneProject: vi.fn(async (_source: string, name: string) => ({ ...project(name), initialized: false, state: null })),
     initProject: vi.fn(),
     openProject: vi.fn(async (path: string) => project(path.split('\\').pop()!)),
     rebuildState: vi.fn(),
@@ -783,5 +784,56 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('專案名稱'), { target: { value: 'gamma' } });
     fireEvent.click(screen.getByRole('button', { name: '建立' }));
     await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\beta'));
+  });
+});
+
+describe('App (git panel polish)', () => {
+  it('passes the current stage to the git panel', async () => {
+    mockGitPanel();
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({ listProjects: vi.fn(async () => [alpha]), openProject: vi.fn(async () => alpha) });
+    await renderApp(api);
+    await screen.findByText('alpha');
+    expect(screen.getByTestId('git-panel')).toHaveAttribute('data-stage', '');
+    fireEvent.click(screen.getByText('alpha'));
+    await waitFor(() => expect(screen.getByTestId('git-panel')).toHaveAttribute('data-stage', 'design'));
+  });
+});
+
+describe('App (clone from url)', () => {
+  it('clones a project from the dialog, re-lists and opens it', async () => {
+    let listed = [project('alpha')];
+    const api = mockApi({
+      listProjects: vi.fn(async () => listed),
+      cloneProject: vi.fn(async (_source: string, name: string) => {
+        const p = { ...project(name), initialized: false, state: null };
+        listed = [...listed, p];
+        return p;
+      }),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '+ 新專案' }));
+    fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
+    fireEvent.change(screen.getByLabelText('來源網址或路徑'), { target: { value: 'https://github.com/a/my-repo.git' } });
+    expect(screen.getByLabelText('專案名稱')).toHaveValue('my-repo');
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    await waitFor(() => expect(api.cloneProject).toHaveBeenCalledWith('https://github.com/a/my-repo.git', 'my-repo'));
+    await waitFor(() => expect(api.openProject).toHaveBeenCalledWith('C:\\P\\my-repo'));
+    expect(api.listProjects).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '新專案' })).not.toBeInTheDocument());
+    expect(screen.getByText('my-repo', { selector: '.project .name' })).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open with the error when the clone fails', async () => {
+    const api = mockApi({ cloneProject: vi.fn(async () => { throw new Error("Error invoking remote method 'projects:clone': Error: invalid clone source"); }) });
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '+ 新專案' }));
+    fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
+    fireEvent.change(screen.getByLabelText('來源網址或路徑'), { target: { value: 'https://github.com/a/x.git' } });
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    // 主程序的驗證錯誤是英文，對話框要顯示對映後的中文
+    expect(await screen.findByText('來源必須是 https:// 或 git@ 網址，或本機既存的資料夾路徑。')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '新專案' })).toBeInTheDocument();
+    expect(api.openProject).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,11 @@
-import type { GitDiffMode, GitFileChange, GitStatus } from '../../../../shared/types';
+import type { GitDiffMode, GitFileChange, GitStatus, StageName } from '../../../../shared/types';
 import { CommitBox } from './CommitBox';
 
 export interface ChangesTabProps {
   status: GitStatus;
   busy: boolean;
+  /** 目前階段，轉給 CommitBox 的前綴列 */
+  stage: StageName | 'done' | null;
   /** commit 輸入由 GitPanel 保管，切換分頁時不會遺失 */
   message: string;
   amend: boolean;
@@ -90,7 +92,7 @@ export function ChangesTab(p: ChangesTabProps) {
             action={{ label: '加入暫存', symbol: '+', onClick: p.onStage }} onDiscard={p.onDiscard} />
         ))}
       </section>
-      <CommitBox busy={busy} stagedCount={staged.length} noCommits={status.noCommits}
+      <CommitBox busy={busy} stagedCount={staged.length} noCommits={status.noCommits} stage={p.stage}
         message={p.message} amend={p.amend} onMessageChange={p.onMessageChange} onAmendChange={p.onAmendChange}
         onCommit={p.onCommit} />
     </div>

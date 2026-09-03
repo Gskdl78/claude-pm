@@ -118,6 +118,10 @@ button.chip.current:disabled { cursor: default; opacity: .6; }
 .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(0,0,0,.6); }
 .dialog { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); }
 .dialog form { background: var(--panel); border: 1px solid var(--border); padding: 16px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; min-width: 320px; }
+/* 新專案對話框：建立空專案 / 從 URL 複製 兩個分頁 */
+.new-project-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 4px; }
+.new-project-tabs button { background: transparent; border-color: transparent; color: var(--muted); }
+.new-project-tabs button.active { color: var(--accent); border-color: var(--accent); }
 .center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .term-hosts { position: absolute; inset: 0; }
 .xterm-host { position: absolute; inset: 0; padding: 4px; }
@@ -210,6 +214,15 @@ button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
 .diff-body .dl.del { color: var(--danger); background: rgba(241, 76, 76, .08); }
 .diff-body .dl.hunk { color: #569cd6; }
 .diff-body .dl.meta { color: var(--muted); }
+/* 逐段暫存：hunk 標頭列右側的按鈕 */
+.diff-hunk-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hunk-btn { flex: none; font-size: 11px; padding: 1px 6px; line-height: 1.4; }
+
+/* commit 前綴列：目前階段的前綴以 primary 高亮，其餘為 ghost */
+.prefix-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.prefix-btn { font-size: 11px; padding: 1px 6px; line-height: 1.4; }
+.prefix-row .ghost { background: transparent; color: var(--muted); }
+.prefix-row .ghost:hover:not(:disabled) { color: var(--accent); }
 
 /* ---- git panel batch 2：中止合併、推送被拒、歷史動作、進階分頁、發佈精靈 ---- */
 .git-conflict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

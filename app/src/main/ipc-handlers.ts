@@ -4,7 +4,7 @@ import { validatePatch } from '../shared/config-schema';
 import { loadConfig, saveConfig, rememberProject, pinnedNotesPath } from './config';
 import { assertNote, collectInsights, pinNote, readPinned, unpinNote, writePinned } from './insights';
 import { assertInsideRoot } from './paths';
-import { listProjects, readProjectInfo, createProject, initExisting, rebuildState } from './projects';
+import { listProjects, readProjectInfo, createProject, cloneProject, assertCloneSource, initExisting, rebuildState } from './projects';
 import { getLog } from './git';
 import { createGitHandlers, type GitHandlers } from './git-handlers';
 import { createDocsHandlers, type DocsHandlers } from './docs-handlers';
@@ -47,6 +47,7 @@ export interface Handlers extends GitHandlers, DocsHandlers {
   'claude:check': () => Promise<ClaudeCheck>;
   'projects:list': () => Promise<ProjectInfo[]>;
   'projects:create': (name: string) => Promise<ProjectInfo>;
+  'projects:clone': (source: string, name: string) => Promise<ProjectInfo>;
   'projects:init': (path: string) => Promise<ProjectInfo>;
   'projects:open': (path: string) => Promise<ProjectInfo>;
   'projects:rebuild': (path: string) => Promise<ProjectInfo>;
@@ -155,6 +156,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     },
 
     'projects:create': (name) => createProject(cfg.root, name, deps.pluginDir, modelVars()),
+
+    'projects:clone': async (source, name) => cloneProject(cfg.root, assertCloneSource(source), name),
 
     'projects:init': async (path) => initExisting(guard(path), deps.pluginDir, modelVars()),
 

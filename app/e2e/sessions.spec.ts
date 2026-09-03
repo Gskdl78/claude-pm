@@ -32,7 +32,7 @@ function makeHome() {
 async function createProject(page: Awaited<ReturnType<Awaited<ReturnType<typeof electron.launch>>['firstWindow']>>, name: string) {
   await page.getByRole('button', { name: '+ 新專案' }).click();
   await page.getByLabel('專案名稱').fill(name);
-  await page.getByRole('button', { name: '建立' }).click();
+  await page.getByRole('button', { name: '建立', exact: true }).click();
   await expect(page.locator('.project.active')).toHaveText(new RegExp(name));
   await expect(page.locator('.stage').getByText('環境搭建')).toBeVisible();
 }

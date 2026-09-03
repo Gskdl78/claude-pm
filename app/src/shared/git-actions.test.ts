@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RESET_MODES, buildGitArgs, describeGitAction, formatGitCommand } from './git-actions';
+import { RESET_MODES, SYNC_COMMAND, buildGitArgs, describeGitAction, formatGitCommand } from './git-actions';
 import type { GitStatus } from './types';
 
 const status = (over: Partial<GitStatus> = {}): GitStatus => ({
@@ -118,5 +118,24 @@ describe('commitPaths', () => {
     const st = { isRepo: true, branch: 'main', detached: false, noCommits: false, upstream: null, ahead: 0, behind: 0, hasRemote: false, merging: false, files: [] };
     const d = describeGitAction({ kind: 'commitPaths', message: 'm', paths: ['docs/a.md', 'docs/b.md'] }, st);
     expect(d).toEqual({ title: '提交檔案', description: '只提交下列檔案的目前內容（不動其他已暫存的變更）：docs/a.md、docs/b.md。訊息：「m」。', danger: false });
+  });
+});
+
+describe('applyPatch / sync', () => {
+  it('maps applyPatch to git apply --cached reading the patch from stdin, with -R when reversing', () => {
+    const patch = 'diff --git a/a.txt b/a.txt\n';
+    expect(buildGitArgs({ kind: 'applyPatch', patch, reverse: false }, HEAD)).toEqual(['apply', '--cached', '--whitespace=nowarn', '-']);
+    expect(buildGitArgs({ kind: 'applyPatch', patch, reverse: true }, HEAD)).toEqual(['apply', '--cached', '-R', '--whitespace=nowarn', '-']);
+    // sync 是多步驟：沒有單一 argv，回半條指令只會誤導呼叫者
+    expect(() => buildGitArgs({ kind: 'sync' }, HEAD)).toThrow(/syncRepo/);
+    expect(SYNC_COMMAND).toBe('git pull --rebase && git push -u origin HEAD');
+  });
+  it('needs no confirmation for applyPatch and describes sync exactly', () => {
+    expect(describeGitAction({ kind: 'applyPatch', patch: 'diff --git a/a b/a\n', reverse: false }, status())).toBeNull();
+    expect(describeGitAction({ kind: 'sync' }, status())).toEqual({
+      title: '同步',
+      description: '先從遠端拉取並變基，再推送目前分支；還沒有上游分支時直接推送並建立追蹤。若有衝突需要手動解決。',
+      danger: false,
+    });
   });
 });
