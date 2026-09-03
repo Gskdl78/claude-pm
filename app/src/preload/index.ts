@@ -18,6 +18,13 @@ const api: PmApi = {
   rebuildState: (path) => ipcRenderer.invoke('projects:rebuild', path),
   getGitLog: (path, n) => ipcRenderer.invoke('git:log', path, n),
   openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
+  git: {
+    status: (path) => ipcRenderer.invoke('git:status', path),
+    branches: (path) => ipcRenderer.invoke('git:branches', path),
+    diff: (path, file, mode) => ipcRenderer.invoke('git:diff', path, file, mode),
+    show: (path, hash) => ipcRenderer.invoke('git:show', path, hash),
+    run: (path, action) => ipcRenderer.invoke('git:run', path, action),
+  },
   pty: {
     start: (path, opts) => ipcRenderer.invoke('pty:start', path, opts),
     write: (data) => ipcRenderer.send('pty:write', data),

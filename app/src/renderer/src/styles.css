@@ -18,11 +18,11 @@ button { font: inherit; color: inherit; background: var(--panel); border: 1px so
 button:hover { border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
 input { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
-.app { height: 100%; display: grid; grid-template-columns: 240px 1fr 300px; grid-template-rows: auto 1fr; grid-template-areas: "side stage git" "side term git"; }
+.app { height: 100%; display: grid; grid-template-columns: 240px 1fr 360px; grid-template-rows: auto 1fr; grid-template-areas: "side stage git" "side term git"; }
 .side { grid-area: side; background: var(--panel); border-right: 1px solid var(--border); overflow: auto; padding: 8px; }
 .stage { grid-area: stage; border-bottom: 1px solid var(--border); padding: 8px 12px; }
 .term { grid-area: term; min-height: 0; position: relative; }
-.git { grid-area: git; background: var(--panel); border-left: 1px solid var(--border); overflow: auto; padding: 8px 12px; }
+.git { grid-area: git; background: var(--panel); border-left: 1px solid var(--border); overflow: hidden; padding: 0; display: flex; flex-direction: column; min-height: 0; }
 .error { color: var(--danger); padding: 6px 0; }
 .muted { color: var(--muted); }
 
@@ -101,3 +101,82 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 .dialog form { background: var(--panel); border: 1px solid var(--border); padding: 16px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; min-width: 320px; }
 .center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .xterm-host { position: absolute; inset: 0; padding: 4px; }
+
+/* --- git panel ------------------------------------------------------------ */
+select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+button.danger-btn { background: #c00000; border-color: #c00000; color: #fff; }
+button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
+.small { font-size: 11px; }
+.danger-text { color: var(--danger); }
+
+.git-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.git-panel .pad { padding: 12px; }
+.git-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.git-branch { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+.git-branch .dot { color: var(--accent); flex: none; }
+.git-branch .branch-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.git-sync { display: flex; gap: 4px; flex: none; }
+.git-sync button { padding: 3px 8px; font-size: 12px; }
+.git-conflict { background: rgba(241, 76, 76, .12); color: var(--danger); padding: 6px 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.git-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.git-tabs button { flex: 1; background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 0; color: var(--muted); }
+.git-tabs button:hover { color: var(--fg); }
+.git-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.git-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; }
+.git-body .empty { font-size: 12px; padding: 2px 0 4px; }
+
+.git-output { flex: none; min-height: 72px; max-height: 160px; overflow: auto; border-top: 1px solid var(--border); padding: 6px 10px; font-family: Consolas, monospace; font-size: 11px; background: var(--bg); }
+.git-output .out { white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-output .out.cmd { color: var(--muted); }
+.git-output .out.ok { color: #4ec94e; }
+.git-output .out.error { color: var(--danger); font-weight: 600; }
+.git-output .out.hint { color: var(--warn); }
+.git-output .out-detail { margin: 2px 0 6px; font: inherit; font-weight: 400; opacity: .85; white-space: pre-wrap; }
+
+.file-group { margin-bottom: 10px; }
+.file-group > header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 0 4px; }
+.file-row { display: flex; align-items: center; gap: 4px; padding: 1px 0; }
+.file-row.conflicted .file-name { color: var(--danger); }
+.file-code { flex: none; width: 16px; text-align: center; font-family: Consolas, monospace; font-size: 11px; color: var(--muted); }
+.file-code.staged { color: var(--accent); }
+.file-code.untracked { color: var(--warn); }
+.file-name { flex: 1; min-width: 0; text-align: left; background: transparent; border: none; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-name:hover { color: var(--accent); border: none; }
+.mini { flex: none; width: 22px; height: 22px; padding: 0; line-height: 1; font-size: 13px; }
+.mini-text { background: transparent; border: none; padding: 0 4px; font-size: 12px; color: var(--muted); }
+.mini-text:hover:not(:disabled) { color: var(--accent); border: none; }
+
+.commit-box { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
+.commit-box textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; resize: vertical; }
+.commit-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+
+.branch-tab { display: flex; flex-direction: column; gap: 12px; }
+.branch-tab section { display: flex; flex-direction: column; gap: 4px; }
+.branch-tab label { font-size: 12px; color: var(--muted); }
+.branch-tab .row { display: flex; gap: 6px; }
+.branch-tab .row select, .branch-tab .row input { flex: 1; min-width: 0; }
+.branch-current { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+.commits .commit { cursor: pointer; padding: 8px 4px; border-radius: 4px; }
+.commits .commit:hover, .commits .commit:focus-visible { background: var(--hover); outline: none; }
+
+.not-repo { padding: 16px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.not-repo-title { font-weight: 600; }
+.not-repo p { margin: 0; }
+
+.dialog-box { background: var(--panel); border: 1px solid var(--border); padding: 16px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; min-width: 360px; max-width: 560px; max-height: 90vh; overflow: auto; }
+.dialog-box h3 { margin: 0; font-size: 14px; }
+.confirm-desc { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.confirm-cmd { margin: 0; font-family: Consolas, monospace; font-size: 12px; background: var(--bg); padding: 6px 8px; border-radius: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.confirm-warn { color: var(--danger); font-weight: 600; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.diff-box { width: min(900px, 90vw); height: 80vh; max-width: none; }
+.diff-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.diff-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-body { flex: 1; min-height: 0; overflow: auto; margin: 0; font-family: Consolas, monospace; font-size: 12px; background: var(--bg); padding: 8px; }
+.diff-body .dl { white-space: pre; }
+.diff-body .dl.add { color: #4ec94e; background: rgba(78, 201, 78, .08); }
+.diff-body .dl.del { color: var(--danger); background: rgba(241, 76, 76, .08); }
+.diff-body .dl.hunk { color: #569cd6; }
+.diff-body .dl.meta { color: var(--muted); }

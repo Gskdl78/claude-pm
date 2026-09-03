@@ -4,6 +4,7 @@ import { loadConfig, saveConfig, rememberProject } from './config';
 import { assertInsideRoot } from './paths';
 import { listProjects, readProjectInfo, createProject, initExisting, rebuildState } from './projects';
 import { getLog } from './git';
+import { createGitHandlers, type GitHandlers } from './git-handlers';
 import { PtyManager, buildClaudeArgs, findClaude } from './pty';
 import { ProjectWatcher } from './watcher';
 
@@ -16,7 +17,7 @@ export interface HandlerDeps {
   checkClaude?: () => Promise<ClaudeCheck>;
 }
 
-export interface Handlers {
+export interface Handlers extends GitHandlers {
   'config:get': () => Promise<AppConfig>;
   'config:setRoot': (root: string) => Promise<AppConfig>;
   'claude:check': () => Promise<ClaudeCheck>;
@@ -96,6 +97,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'projects:rebuild': async (path) => rebuildState(guard(path), deps.pluginDir),
 
     'git:log': async (path, n) => getLog(guard(path), n),
+
+    ...createGitHandlers(guard),
 
     'shell:openPath': async (path) => {
       const p = guard(path);

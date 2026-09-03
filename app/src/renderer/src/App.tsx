@@ -5,19 +5,12 @@ import { ProjectList } from './components/ProjectList';
 import { NewProjectDialog } from './components/NewProjectDialog';
 import { StagePanel } from './components/StagePanel';
 import { Terminal } from './components/Terminal';
-import { GitLog } from './components/GitLog';
+import { GitPanel } from './components/git/GitPanel';
+import { errorMessage } from './errors';
 import { ClaudeMissing } from './components/ClaudeMissing';
 
 type Screen = 'loading' | 'claude-missing' | 'main';
 type PtyStatus = 'idle' | 'running' | 'exited';
-
-// ipcRenderer.invoke wraps every main-process failure in its own preamble;
-// only the tail carries something a user can act on.
-const REMOTE_METHOD_PREFIX = /^Error invoking remote method '[^']*': (?:Error: )?/;
-
-export function errorMessage(e: unknown): string {
-  return (e instanceof Error ? e.message : String(e)).replace(REMOTE_METHOD_PREFIX, '');
-}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -25,6 +18,7 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [current, setCurrent] = useState<ProjectInfo | null>(null);
   const [commits, setCommits] = useState<GitCommit[]>([]);
+  const [gitRevision, setGitRevision] = useState(0);
   const [ptyStatus, setPtyStatus] = useState<PtyStatus>('idle');
   const [launchSeq, setLaunchSeq] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +111,7 @@ export default function App() {
       setProjects((prev) => prev.map((x) => (x.path === p.path ? p : x)));
       if (currentRef.current?.path === p.path) setCurrentProject(p);
     });
-    const offGit = pm.onGitChanged((c) => setCommits(c));
+    const offGit = pm.onGitChanged((c) => { setCommits(c); setGitRevision((n) => n + 1); });
     const offExit = pm.pty.onExit((code) => {
       const l = launchRef.current;
       const cur = currentRef.current;
@@ -187,7 +181,7 @@ export default function App() {
       </header>
       <Terminal status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }} />
       <aside className="git">
-        <GitLog commits={commits} />
+        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} />
       </aside>
       <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
     </div>
