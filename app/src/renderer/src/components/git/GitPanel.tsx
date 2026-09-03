@@ -6,6 +6,7 @@ import { pm } from '../../api';
 import { errorMessage } from '../../errors';
 import { ConfirmDialog, type ConfirmRequest } from './ConfirmDialog';
 import { OutputLog, type LogEntry } from './OutputLog';
+import { ResizeHandle, useLogHeight } from './ResizeHandle';
 import { DiffView } from './DiffView';
 import { ChangesTab } from './ChangesTab';
 import { BranchTab } from './BranchTab';
@@ -49,6 +50,7 @@ export function GitPanel({ path, commits, revision }: Props) {
   const seqRef = useRef(0);
   const statusErrorRef = useRef<string | null>(null);
   const pathRef = useRef(path);
+  const [logHeight, setLogHeight] = useLogHeight();
   const logId = useRef(0);
   pathRef.current = path;
 
@@ -156,6 +158,13 @@ export function GitPanel({ path, commits, revision }: Props) {
     catch (e) { log('error', `無法讀取提交：${errorMessage(e)}`); }
   };
 
+  const logPane = (
+    <>
+      <ResizeHandle height={logHeight} onHeight={setLogHeight} />
+      <div className="git-log" style={{ height: logHeight }}><OutputLog entries={entries} /></div>
+    </>
+  );
+
   const dialogs = (
     <>
       <ConfirmDialog request={pending?.request ?? null} onConfirm={confirmPending} onCancel={() => setPending(null)} />
@@ -170,7 +179,7 @@ export function GitPanel({ path, commits, revision }: Props) {
         {statusError
           ? <div className="error pad" role="alert">{statusError}</div>
           : <div className="muted pad">讀取 git 狀態…</div>}
-        <OutputLog entries={entries} />
+        {logPane}
         {dialogs}
       </div>
     );
@@ -179,7 +188,7 @@ export function GitPanel({ path, commits, revision }: Props) {
     return (
       <div className="git-panel">
         <NotRepo busy={busy} onInit={() => request({ kind: 'init' })} />
-        <OutputLog entries={entries} />
+        {logPane}
         {dialogs}
       </div>
     );
@@ -236,7 +245,7 @@ export function GitPanel({ path, commits, revision }: Props) {
         )}
         {tab === 'history' && <HistoryTab commits={commits} onShow={(hash) => { void openCommit(hash); }} />}
       </div>
-      <OutputLog entries={entries} />
+      {logPane}
       {dialogs}
     </div>
   );

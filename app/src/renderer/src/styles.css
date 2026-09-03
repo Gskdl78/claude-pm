@@ -126,7 +126,10 @@ button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
 .git-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; }
 .git-body .empty { font-size: 12px; padding: 2px 0 4px; }
 
-.git-output { flex: none; min-height: 72px; max-height: 160px; overflow: auto; border-top: 1px solid var(--border); padding: 6px 10px; font-family: Consolas, monospace; font-size: 11px; background: var(--bg); }
+.git-resize { flex: none; height: 6px; cursor: row-resize; background: transparent; border-top: 1px solid var(--border); touch-action: none; }
+.git-resize:hover, .git-resize:focus-visible { background: var(--accent); opacity: .55; outline: none; }
+.git-log { flex: none; display: flex; min-height: 60px; }
+.git-output { flex: 1; min-height: 0; overflow: auto; padding: 6px 10px; font-family: Consolas, monospace; font-size: 11px; background: var(--bg); }
 .git-output .out { white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-output .out.cmd { color: var(--muted); }
 .git-output .out.ok { color: #4ec94e; }

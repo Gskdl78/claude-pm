@@ -186,4 +186,18 @@ describe('GitPanel', () => {
     rerender(<GitPanel path={P} commits={[]} revision={1} />);
     await waitFor(() => expect(git.status.mock.calls.length).toBeGreaterThan(n));
   });
+
+  it('resizes the output log with the drag handle', async () => {
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    const log = () => (screen.getByRole('log', { name: '輸出' }).parentElement as HTMLElement).style.height;
+    await screen.findByRole('log', { name: '輸出' });
+    expect(log()).toBe('160px');
+    const handle = screen.getByRole('separator');
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientY: 400 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 360 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 360 });
+    expect(log()).toBe('200px');
+    fireEvent.doubleClick(handle);
+    expect(log()).toBe('160px');
+  });
 });
