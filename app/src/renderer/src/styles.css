@@ -27,11 +27,11 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 .muted { color: var(--muted); }
 
 /* --- sidebar header: root path + new project ------------------------------ */
-.side > .muted {
+.side .side-head > .muted {
   display: block; padding: 2px 4px 8px; font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.side > .muted::before { content: "📁 "; }
+.side .side-head > .muted::before { content: "📁 "; }
 
 /* --- project list --------------------------------------------------------- */
 .projects { display: flex; flex-direction: column; gap: 4px; }
