@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGitArgs, describeGitAction, formatGitCommand } from './git-actions';
+import { RESET_MODES, buildGitArgs, describeGitAction, formatGitCommand } from './git-actions';
 import type { GitStatus } from './types';
 
 const status = (over: Partial<GitStatus> = {}): GitStatus => ({
@@ -63,5 +63,48 @@ describe('describeGitAction', () => {
     expect(describeGitAction({ kind: 'merge', branch: 'dev' }, st)).toMatchObject({ title: '合併', danger: false });
     expect(describeGitAction({ kind: 'pull' }, st)).toMatchObject({ title: '拉取', danger: false });
     expect(describeGitAction({ kind: 'init' }, status({ isRepo: false }))).toMatchObject({ title: '初始化', danger: false });
+  });
+});
+
+describe('buildGitArgs (batch 2)', () => {
+  it('maps stash / reset / revert / tag / abort / remote actions', () => {
+    expect(buildGitArgs({ kind: 'pullRebase' }, HEAD)).toEqual(['pull', '--rebase']);
+    expect(buildGitArgs({ kind: 'stash', message: null }, HEAD)).toEqual(['stash', 'push', '-u']);
+    expect(buildGitArgs({ kind: 'stash', message: 'wip 登入' }, HEAD)).toEqual(['stash', 'push', '-u', '-m', 'wip 登入']);
+    expect(buildGitArgs({ kind: 'stashPop', index: 1 }, HEAD)).toEqual(['stash', 'pop', 'stash@{1}']);
+    expect(buildGitArgs({ kind: 'stashDrop', index: 0 }, HEAD)).toEqual(['stash', 'drop', 'stash@{0}']);
+    expect(buildGitArgs({ kind: 'reset', mode: 'hard', target: 'HEAD~1' }, HEAD)).toEqual(['reset', '--hard', 'HEAD~1']);
+    expect(buildGitArgs({ kind: 'reset', mode: 'soft', target: 'abc1234' }, HEAD)).toEqual(['reset', '--soft', 'abc1234']);
+    expect(buildGitArgs({ kind: 'reset', mode: 'mixed', target: 'HEAD~3' }, NO_HEAD)).toEqual(['reset', '--mixed', 'HEAD~3']);
+    expect(buildGitArgs({ kind: 'revert', hash: 'abc1234' }, HEAD)).toEqual(['revert', '--no-edit', 'abc1234']);
+    expect(buildGitArgs({ kind: 'tag', name: 'v1', hash: null }, HEAD)).toEqual(['tag', 'v1']);
+    expect(buildGitArgs({ kind: 'tag', name: 'v1', hash: 'abc1234' }, HEAD)).toEqual(['tag', 'v1', 'abc1234']);
+    expect(buildGitArgs({ kind: 'deleteTag', name: 'v1' }, HEAD)).toEqual(['tag', '-d', 'v1']);
+    expect(buildGitArgs({ kind: 'abortMerge' }, HEAD)).toEqual(['merge', '--abort']);
+    expect(buildGitArgs({ kind: 'addRemote', url: 'https://github.com/o/r.git' }, HEAD)).toEqual(['remote', 'add', 'origin', 'https://github.com/o/r.git']);
+    expect(formatGitCommand(['stash', 'push', '-u', '-m', 'wip 登入'])).toBe('git stash push -u -m "wip 登入"');
+    expect(formatGitCommand(['stash', 'pop', 'stash@{1}'])).toBe('git stash pop stash@{1}');
+  });
+});
+
+describe('describeGitAction (batch 2)', () => {
+  it('marks reset --hard and stash drop as dangerous, the rest as normal, with the exact wording', () => {
+    const st = status();
+    expect(describeGitAction({ kind: 'reset', mode: 'hard', target: 'HEAD~1' }, st)).toEqual({
+      title: '重設', danger: true, description: `把目前的 main 退回到 HEAD~1。模式 hard：${RESET_MODES.hard}`,
+    });
+    expect(describeGitAction({ kind: 'reset', mode: 'soft', target: 'abc1234' }, st)).toMatchObject({ title: '重設', danger: false });
+    expect(describeGitAction({ kind: 'reset', mode: 'mixed', target: 'HEAD~2' }, st)?.description).toContain(RESET_MODES.mixed);
+    expect(describeGitAction({ kind: 'stashDrop', index: 0 }, st)).toMatchObject({ title: '丟棄收藏', danger: true });
+    expect(describeGitAction({ kind: 'stash', message: null }, st)).toMatchObject({ title: '收藏變更', danger: false });
+    expect(describeGitAction({ kind: 'stash', message: 'wip' }, st)?.description).toContain('「wip」');
+    expect(describeGitAction({ kind: 'stashPop', index: 2 }, st)?.description).toContain('stash@{2}');
+    expect(describeGitAction({ kind: 'revert', hash: 'abc1234' }, st)).toMatchObject({ title: '還原提交', danger: false });
+    expect(describeGitAction({ kind: 'tag', name: 'v1', hash: null }, st)?.description).toBe('在目前的提交上建立標籤 v1，方便日後找到這個版本。');
+    expect(describeGitAction({ kind: 'tag', name: 'v1', hash: 'abc1234' }, st)?.description).toBe('在提交 abc1234 上建立標籤 v1，方便日後找到這個版本。');
+    expect(describeGitAction({ kind: 'deleteTag', name: 'v1' }, st)).toMatchObject({ title: '刪除標籤', danger: false });
+    expect(describeGitAction({ kind: 'abortMerge' }, st)).toMatchObject({ title: '中止合併', danger: false });
+    expect(describeGitAction({ kind: 'addRemote', url: 'https://github.com/o/r.git' }, st)).toMatchObject({ title: '設定遠端', danger: false });
+    expect(describeGitAction({ kind: 'pullRebase' }, st)).toMatchObject({ title: '拉取（變基）', danger: false });
   });
 });

@@ -98,6 +98,24 @@ export interface GitResult { ok: boolean; code: number; stdout: string; stderr: 
 
 export type GitDiffMode = 'staged' | 'unstaged' | 'untracked';
 
+export type GitResetMode = 'soft' | 'mixed' | 'hard';
+
+export interface GitStash { index: number; message: string }   // index 0 = 最新（stash@{0}）
+
+/** 「進階」分頁才需要、不隨 3 秒輪詢讀取的資料 */
+export interface GitExtras { stashes: GitStash[]; tags: string[] }
+
+export interface GhCheck {
+  installed: boolean;
+  version: string | null;   // `gh --version` 第一行
+  authed: boolean;          // `gh auth status` 結束碼為 0
+  detail: string;           // auth status 的原始輸出（截斷於 2000 字元），供提示
+}
+
+export type PublishChoice =
+  | { mode: 'create'; name: string; isPrivate: boolean }
+  | { mode: 'url'; url: string };
+
 export type GitAction =
   | { kind: 'init' }
   | { kind: 'stage'; file: string }
@@ -111,7 +129,17 @@ export type GitAction =
   | { kind: 'merge'; branch: string }
   | { kind: 'push' }
   | { kind: 'pull' }
-  | { kind: 'fetch' };
+  | { kind: 'fetch' }
+  | { kind: 'pullRebase' }
+  | { kind: 'stash'; message: string | null }
+  | { kind: 'stashPop'; index: number }
+  | { kind: 'stashDrop'; index: number }
+  | { kind: 'reset'; mode: GitResetMode; target: string }
+  | { kind: 'revert'; hash: string }
+  | { kind: 'tag'; name: string; hash: string | null }
+  | { kind: 'deleteTag'; name: string }
+  | { kind: 'abortMerge' }
+  | { kind: 'addRemote'; url: string };
 
 export interface GitApi {
   status(path: string): Promise<GitStatus>;
@@ -119,6 +147,12 @@ export interface GitApi {
   diff(path: string, file: string, mode: GitDiffMode): Promise<string>;
   show(path: string, hash: string): Promise<string>;
   run(path: string, action: GitAction): Promise<GitResult>;
+  extras(path: string): Promise<GitExtras>;
+}
+
+export interface GhApi {
+  check(path: string): Promise<GhCheck>;
+  repoCreate(path: string, name: string, isPrivate: boolean): Promise<GitResult>;
 }
 
 export interface PmApi {
@@ -133,6 +167,7 @@ export interface PmApi {
   getGitLog(path: string, n?: number): Promise<GitCommit[]>;
   openPath(path: string): Promise<string>;
   git: GitApi;
+  gh: GhApi;
   pty: {
     start(path: string, opts: PtyStartOptions): Promise<void>;
     write(data: string): void;

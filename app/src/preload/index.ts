@@ -24,6 +24,11 @@ const api: PmApi = {
     diff: (path, file, mode) => ipcRenderer.invoke('git:diff', path, file, mode),
     show: (path, hash) => ipcRenderer.invoke('git:show', path, hash),
     run: (path, action) => ipcRenderer.invoke('git:run', path, action),
+    extras: (path) => ipcRenderer.invoke('git:extras', path),
+  },
+  gh: {
+    check: (path) => ipcRenderer.invoke('gh:check', path),
+    repoCreate: (path, name, isPrivate) => ipcRenderer.invoke('gh:repoCreate', path, name, isPrivate),
   },
   pty: {
     start: (path, opts) => ipcRenderer.invoke('pty:start', path, opts),

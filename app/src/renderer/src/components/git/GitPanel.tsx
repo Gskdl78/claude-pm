@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitStatus } from '../../../../shared/types';
+import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitExtras, GitResult, GitStatus, PublishChoice } from '../../../../shared/types';
 import { buildGitArgs, describeGitAction, formatGitCommand } from '../../../../shared/git-actions';
-import { explainGitError, gitResultText } from '../../../../shared/git-errors';
+import { explainGitError, gitResultText, isPushRejected } from '../../../../shared/git-errors';
+import { describePublish } from '../../../../shared/gh-actions';
 import { pm } from '../../api';
 import { errorMessage } from '../../errors';
 import { ConfirmDialog, type ConfirmRequest } from './ConfirmDialog';
@@ -12,17 +13,19 @@ import { ChangesTab } from './ChangesTab';
 import { BranchTab } from './BranchTab';
 import { HistoryTab } from './HistoryTab';
 import { NotRepo } from './NotRepo';
+import { AdvancedTab, EMPTY_ADVANCED_FORM, type AdvancedForm } from './AdvancedTab';
+import { PublishWizard } from './PublishWizard';
 
-type Tab = 'changes' | 'branches' | 'history';
+type Tab = 'changes' | 'branches' | 'history' | 'advanced';
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'changes', label: '變更' }, { id: 'branches', label: '分支' }, { id: 'history', label: '歷史' },
+  { id: 'changes', label: '變更' }, { id: 'branches', label: '分支' }, { id: 'history', label: '歷史' }, { id: 'advanced', label: '進階' },
 ];
 
 /** 工作目錄的編輯不會動到 .git，靠這個低頻輪詢補上（視窗可見且非 busy 時才跑）。 */
 export const STATUS_POLL_MS = 3000;
 const MAX_LOG = 200;
-const NO_REMOTE_HINT = '尚未設定遠端倉庫：請先在終端機執行 git remote add origin <網址>，之後再推送。（「發佈到 GitHub」精靈將於下一批次提供）';
 const EMPTY_BRANCHES: GitBranches = { current: '', all: [] };
+const EMPTY_EXTRAS: GitExtras = { stashes: [], tags: [] };
 
 interface Props {
   path: string | null;
@@ -31,7 +34,10 @@ interface Props {
   revision: number;
 }
 
-interface Pending { request: ConfirmRequest; action: GitAction }
+type Pending =
+  | { request: ConfirmRequest; action: GitAction }
+  /** 發佈精靈：url 路線是 addRemote → push 兩個動作；create 路線走 gh */
+  | { request: ConfirmRequest; publish: PublishChoice };
 interface Viewer { title: string; text: string }
 
 export function GitPanel({ path, commits, revision }: Props) {
@@ -47,7 +53,15 @@ export function GitPanel({ path, commits, revision }: Props) {
   const [message, setMessage] = useState('');
   const [amend, setAmend] = useState(false);
   const [newBranch, setNewBranch] = useState('');
+  const [adv, setAdv] = useState<AdvancedForm>(EMPTY_ADVANCED_FORM);
+  const [extras, setExtras] = useState<GitExtras>(EMPTY_EXTRAS);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  // 推送被拒後顯示「先擷取 / 拉取（變基）」提示列；推送、拉取、擷取成功即清除
+  const [rejected, setRejected] = useState(false);
+  // 每次面板動作結束 +1，讓「進階」分頁重讀收藏與標籤
+  const [actionSeq, setActionSeq] = useState(0);
   const seqRef = useRef(0);
+  const extrasSeqRef = useRef(0);
   const statusErrorRef = useRef<string | null>(null);
   const pathRef = useRef(path);
   const [logHeight, setLogHeight] = useLogHeight();
@@ -87,6 +101,7 @@ export function GitPanel({ path, commits, revision }: Props) {
     setEntries([]); setPending(null); setViewer(null); setTab('changes'); setStatus(null);
     setStatusError(null); statusErrorRef.current = null;
     setMessage(''); setAmend(false); setNewBranch('');
+    setAdv(EMPTY_ADVANCED_FORM); setExtras(EMPTY_EXTRAS); setWizardOpen(false); setRejected(false);
   }, [path]);
 
   // 專案切換與 watcher 事件（revision）→ 立即重讀
@@ -100,30 +115,79 @@ export function GitPanel({ path, commits, revision }: Props) {
     return () => { clearInterval(timer); window.removeEventListener('focus', tick); };
   }, [path, refresh, busy]);
 
-  const execute = useCallback(async (action: GitAction) => {
+  // 收藏與標籤只在「進階」分頁顯示：分頁開啟、watcher 事件（revision）或面板動作（actionSeq）後重讀，不跟著 3 秒輪詢
+  const refreshExtras = useCallback(async () => {
+    if (!path) return;
+    extrasSeqRef.current += 1;
+    const seq = extrasSeqRef.current;
+    try {
+      const ex = await pm.git.extras(path);
+      // 被更新的 refreshExtras 或專案切換取代的結果一律丟棄
+      if (seq !== extrasSeqRef.current || pathRef.current !== path) return;
+      setExtras((prev) => (JSON.stringify(prev) === JSON.stringify(ex) ? prev : ex));
+    } catch (e) {
+      if (seq !== extrasSeqRef.current || pathRef.current !== path) return;
+      log('error', `讀取收藏與標籤失敗：${errorMessage(e)}`);
+    }
+  }, [path, log]);
+
+  useEffect(() => { if (tab === 'advanced') void refreshExtras(); }, [tab, refreshExtras, revision, actionSeq]);
+
+  /** 寫入指令與結果；回傳是否成功。推送被拒時打開提示列，同步類動作成功時關掉它。 */
+  const report = useCallback((r: GitResult, kind: GitAction['kind'] | 'publish'): boolean => {
+    log('cmd', r.command);
+    if (r.ok) {
+      log('ok', '完成 ✓');
+      if (kind === 'push' || kind === 'pull' || kind === 'pullRebase' || kind === 'fetch' || kind === 'publish') setRejected(false);
+      return true;
+    }
+    const text = gitResultText(r);
+    log('error', explainGitError(text) ?? '執行失敗，原始輸出如下：', text);
+    if ((kind === 'push' || kind === 'publish') && isPushRejected(text)) setRejected(true);
+    return false;
+  }, [log]);
+
+  /** 依序執行，任一步失敗就停（發佈精靈的「設定遠端 → 推送」靠這個）。 */
+  const execute = useCallback(async (...actions: GitAction[]) => {
     if (!path) return;
     setBusy(true);
     try {
-      const r = await pm.git.run(path, action);
-      // 期間換了專案：舊專案的結果不該進新專案的輸出，也不該觸發新專案的重讀
-      if (pathRef.current !== path) return;
-      log('cmd', r.command);
-      if (r.ok) {
-        log('ok', '完成 ✓');
-        // 提交成功才清空輸入，失敗時訊息要留著讓使用者改
+      for (const action of actions) {
+        const r = await pm.git.run(path, action);
+        // 期間換了專案：舊專案的結果不該進新專案的輸出，也不該觸發新專案的重讀
+        if (pathRef.current !== path) return;
+        const ok = report(r, action.kind);
+        if (!ok) return;
+        // 成功才清空輸入，失敗時要留著讓使用者改
         if (action.kind === 'commit') { setMessage(''); setAmend(false); }
-      } else {
-        const text = gitResultText(r);
-        log('error', explainGitError(text) ?? '執行失敗，原始輸出如下：', text);
+        if (action.kind === 'stash') setAdv((a) => ({ ...a, stashMessage: '' }));
+        if (action.kind === 'tag') setAdv((a) => ({ ...a, tagName: '', tagHash: null }));
       }
     } catch (e) {
       if (pathRef.current !== path) return;
       log('error', errorMessage(e));
     } finally {
       setBusy(false);
-      if (pathRef.current === path) void refresh();
+      if (pathRef.current === path) { setActionSeq((n) => n + 1); void refresh(); }
     }
-  }, [path, log, refresh]);
+  }, [path, log, report, refresh]);
+
+  /** 發佈精靈的 create 路線：gh 自己建倉庫、設 origin、推送，不經 git:run。 */
+  const publishWithGh = useCallback(async (name: string, isPrivate: boolean) => {
+    if (!path) return;
+    setBusy(true);
+    try {
+      const r = await pm.gh.repoCreate(path, name, isPrivate);
+      if (pathRef.current !== path) return;
+      report(r, 'publish');
+    } catch (e) {
+      if (pathRef.current !== path) return;
+      log('error', errorMessage(e));
+    } finally {
+      setBusy(false);
+      if (pathRef.current === path) { setActionSeq((n) => n + 1); void refresh(); }
+    }
+  }, [path, log, report, refresh]);
 
   const request = useCallback((action: GitAction) => {
     if (!status || busy) return;
@@ -135,14 +199,22 @@ export function GitPanel({ path, commits, revision }: Props) {
 
   const confirmPending = () => {
     if (!pending) return;
-    const { action } = pending;
+    const p = pending;
     setPending(null);
-    void execute(action);
+    if ('action' in p) { void execute(p.action); return; }
+    if (p.publish.mode === 'url') { void execute({ kind: 'addRemote', url: p.publish.url }, { kind: 'push' }); return; }
+    void publishWithGh(p.publish.name, p.publish.isPrivate);
+  };
+
+  /** 精靈只收集選擇；確認框顯示確切指令後才執行。 */
+  const submitPublish = (choice: PublishChoice) => {
+    setWizardOpen(false);
+    setPending({ request: describePublish(choice), publish: choice });
   };
 
   const syncAction = (kind: 'push' | 'pull') => {
     if (!status) return;
-    if (!status.hasRemote) { log('hint', NO_REMOTE_HINT); return; }
+    if (!status.hasRemote) { setWizardOpen(true); return; }
     request({ kind });
   };
 
@@ -169,6 +241,9 @@ export function GitPanel({ path, commits, revision }: Props) {
     <>
       <ConfirmDialog request={pending?.request ?? null} onConfirm={confirmPending} onCancel={() => setPending(null)} />
       {viewer && <DiffView title={viewer.title} text={viewer.text} onClose={() => setViewer(null)} />}
+      {wizardOpen && path && status && (
+        <PublishWizard path={path} noCommits={status.noCommits} busy={busy} onSubmit={submitPublish} onCancel={() => setWizardOpen(false)} />
+      )}
     </>
   );
 
@@ -214,7 +289,21 @@ export function GitPanel({ path, commits, revision }: Props) {
       </header>
       {(status.merging || conflicts > 0) && (
         <div className="git-conflict">
-          合併進行中{conflicts > 0 ? `：${conflicts} 個檔案有衝突` : ''}。請解決衝突後把檔案「標記為已解決」再提交（可交給 Claude Code）；要放棄合併，請在終端機執行 git merge --abort。
+          <span>
+            {status.merging ? '合併進行中' : '有衝突'}{conflicts > 0 ? `：${conflicts} 個檔案有衝突` : ''}。請解決衝突後把檔案「標記為已解決」再提交（可交給 Claude Code）。
+          </span>
+          {/* 只有 MERGE_HEAD 存在時 merge --abort 才有意義；變基 / 還原 / 取回收藏的衝突另有指令，錯誤對映表會說明 */}
+          {status.merging && (
+            <button type="button" className="danger-text" disabled={busy} onClick={() => request({ kind: 'abortMerge' })}>中止合併</button>
+          )}
+        </div>
+      )}
+      {rejected && (
+        <div className="git-rejected" role="status">
+          <span>推送被拒：遠端有你沒有的提交。先「擷取」看看，或「拉取（變基）」把本地提交接到遠端之後再推送。不提供強制推送。</span>
+          <button type="button" disabled={busy} onClick={() => request({ kind: 'fetch' })}>先擷取</button>
+          <button type="button" disabled={busy} onClick={() => request({ kind: 'pullRebase' })}>拉取（變基）</button>
+          <button type="button" className="mini-text" aria-label="關閉推送提示" onClick={() => setRejected(false)}>✕</button>
         </div>
       )}
       <nav className="git-tabs" role="tablist">
@@ -243,7 +332,21 @@ export function GitPanel({ path, commits, revision }: Props) {
             onCreate={(branch) => request({ kind: 'createBranch', branch })}
             onMerge={(branch) => request({ kind: 'merge', branch })} />
         )}
-        {tab === 'history' && <HistoryTab commits={commits} onShow={(hash) => { void openCommit(hash); }} />}
+        {tab === 'history' && (
+          <HistoryTab commits={commits} busy={busy} onShow={(hash) => { void openCommit(hash); }}
+            onRevert={(hash) => request({ kind: 'revert', hash })}
+            onResetTo={(hash) => { setAdv((a) => ({ ...a, resetTarget: hash })); setTab('advanced'); }}
+            onTag={(hash) => { setAdv((a) => ({ ...a, tagHash: hash })); setTab('advanced'); }} />
+        )}
+        {tab === 'advanced' && (
+          <AdvancedTab status={status} extras={extras} busy={busy} form={adv} onFormChange={setAdv}
+            onStash={(message) => request({ kind: 'stash', message })}
+            onStashPop={(index) => request({ kind: 'stashPop', index })}
+            onStashDrop={(index) => request({ kind: 'stashDrop', index })}
+            onReset={(mode, target) => request({ kind: 'reset', mode, target })}
+            onTag={(name, hash) => request({ kind: 'tag', name, hash })}
+            onDeleteTag={(name) => request({ kind: 'deleteTag', name })} />
+        )}
       </div>
       {logPane}
       {dialogs}

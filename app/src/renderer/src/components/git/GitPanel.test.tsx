@@ -3,9 +3,10 @@ import { act, render, screen, fireEvent, waitFor, within } from '@testing-librar
 import type { GitBranches, GitResult, GitStatus } from '../../../../shared/types';
 
 const git = vi.hoisted(() => ({
-  status: vi.fn(), branches: vi.fn(), diff: vi.fn(), show: vi.fn(), run: vi.fn(),
+  status: vi.fn(), branches: vi.fn(), diff: vi.fn(), show: vi.fn(), run: vi.fn(), extras: vi.fn(),
 }));
-vi.mock('../../api', () => ({ pm: { git } }));
+const gh = vi.hoisted(() => ({ check: vi.fn(), repoCreate: vi.fn() }));
+vi.mock('../../api', () => ({ pm: { git, gh } }));
 
 import { GitPanel } from './GitPanel';
 
@@ -26,6 +27,9 @@ beforeEach(() => {
   git.run.mockImplementation(async (_p: string, a: { kind: string }) => ok(`git ${a.kind}`));
   git.diff.mockResolvedValue('');
   git.show.mockResolvedValue('');
+  git.extras.mockResolvedValue({ stashes: [], tags: [] });
+  gh.check.mockResolvedValue({ installed: true, version: 'gh version 2.60.0', authed: true, detail: '' });
+  gh.repoCreate.mockResolvedValue(ok('gh repo create alpha --private --source=. --remote=origin --push'));
 });
 
 describe('GitPanel', () => {
@@ -74,19 +78,151 @@ describe('GitPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: '推送' }));
     expect(await screen.findByText('git push -u origin HEAD')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '確認' }));
-    expect(await screen.findByText(/推送被拒/)).toBeInTheDocument();
+    expect(await within(screen.getByRole('log', { name: '輸出' })).findByText(/推送被拒/)).toBeInTheDocument();
     expect(screen.getByText('! [rejected] main -> main (fetch first)')).toBeInTheDocument();
   });
 
-  it('logs a hint instead of pushing when there is no remote', async () => {
+  it('opens the publish wizard when there is no remote and publishes by url as remote-add then push', async () => {
     git.status.mockResolvedValue(st({ hasRemote: false, upstream: null }));
     render(<GitPanel path={P} commits={[]} revision={0} />);
     expect(await screen.findByText('無遠端')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '推送' }));
-    expect(await screen.findByText(/尚未設定遠端倉庫/)).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(git.run).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '擷取' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '推送' }));
+    const wizard = await screen.findByRole('dialog', { name: '發佈到 GitHub' });
+    expect(gh.check).toHaveBeenCalledWith(P);
+    await within(wizard).findByText('登入狀態：已登入');
+    fireEvent.click(within(wizard).getByLabelText('貼現有倉庫網址'));
+    fireEvent.change(within(wizard).getByLabelText('倉庫網址'), { target: { value: 'https://github.com/o/r.git' } });
+    fireEvent.click(within(wizard).getByRole('button', { name: '下一步' }));
+    expect(screen.queryByRole('dialog', { name: '發佈到 GitHub' })).not.toBeInTheDocument();
+    // 指令區是兩行，Testing Library 的預設正規化會把換行折成空白
+    expect(await screen.findByText('git remote add origin https://github.com/o/r.git git push -u origin HEAD')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledTimes(2));
+    expect(git.run.mock.calls.map((c) => c[1])).toEqual([{ kind: 'addRemote', url: 'https://github.com/o/r.git' }, { kind: 'push' }]);
+    expect(screen.getAllByText('完成 ✓')).toHaveLength(2);
+  });
+
+  it('creates a GitHub repo through gh after confirming the exact gh command', async () => {
+    git.status.mockResolvedValue(st({ hasRemote: false, upstream: null }));
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: '拉取' }));
+    const wizard = await screen.findByRole('dialog', { name: '發佈到 GitHub' });
+    await within(wizard).findByText('登入狀態：已登入');
+    expect(within(wizard).getByLabelText('倉庫名稱')).toHaveValue('alpha');
+    fireEvent.click(within(wizard).getByRole('button', { name: '下一步' }));
+    expect(await screen.findByText('gh repo create alpha --private --source=. --remote=origin --push')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(gh.repoCreate).toHaveBeenCalledWith(P, 'alpha', true));
+    expect(await screen.findByText('> gh repo create alpha --private --source=. --remote=origin --push')).toBeInTheDocument();
+    expect(screen.getByText('完成 ✓')).toBeInTheDocument();
+    expect(git.run).not.toHaveBeenCalled();
+  });
+
+  it('stops the url publish at remote-add when it fails', async () => {
+    git.status.mockResolvedValue(st({ hasRemote: false, upstream: null }));
+    git.run.mockResolvedValue({ ok: false, code: 3, stdout: '', stderr: 'error: remote origin already exists.', command: 'git remote add origin https://github.com/o/r.git' });
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: '推送' }));
+    const wizard = await screen.findByRole('dialog', { name: '發佈到 GitHub' });
+    await within(wizard).findByText('登入狀態：已登入');
+    fireEvent.click(within(wizard).getByLabelText('貼現有倉庫網址'));
+    fireEvent.change(within(wizard).getByLabelText('倉庫網址'), { target: { value: 'https://github.com/o/r.git' } });
+    fireEvent.click(within(wizard).getByRole('button', { name: '下一步' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    expect(await screen.findByText(/已經設定過遠端 origin/)).toBeInTheDocument();
+    expect(git.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers abort-merge in the banner and runs git merge --abort after confirmation', async () => {
+    git.status.mockResolvedValue(st({ merging: true, files: [{ ...unstagedFile, index: 'U', work: 'U', unstaged: false, conflicted: true }] }));
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: '中止合併' }));
+    expect(await screen.findByText('git merge --abort')).toBeInTheDocument();
+    expect(screen.getByText('確認：中止合併')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'abortMerge' }));
+  });
+
+  it('hides abort-merge when conflicts come from something other than a merge', async () => {
+    git.status.mockResolvedValue(st({ merging: false, files: [{ ...unstagedFile, index: 'U', work: 'U', unstaged: false, conflicted: true }] }));
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    expect(await screen.findByText(/有衝突：1 個檔案有衝突/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '中止合併' })).not.toBeInTheDocument();
+  });
+
+  it('reverts a commit from history and hands reset-to-here / tag-here to the advanced tab', async () => {
+    render(<GitPanel path={P} commits={[{ hash: 'abc1234', date: '2026-09-02T10:00:00+08:00', message: 'chore: init' }]} revision={0} />);
+    fireEvent.click(await screen.findByRole('tab', { name: '歷史' }));
+    fireEvent.click(screen.getByRole('button', { name: '還原提交：abc1234' }));
+    expect(await screen.findByText('git revert --no-edit abc1234')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '重設到此：abc1234' }));
+    expect(screen.getByRole('tab', { name: '進階' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('重設目標')).toHaveValue('abc1234');
+    await waitFor(() => expect(git.extras).toHaveBeenCalledWith(P));
+    fireEvent.click(screen.getByLabelText('hard'));
+    fireEvent.click(screen.getByRole('button', { name: '重設' }));
+    expect(await screen.findByText('git reset --hard abc1234')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我了解風險，執行' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '取消' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(git.run).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('tab', { name: '歷史' }));
+    fireEvent.click(screen.getByRole('button', { name: '在此建立標籤：abc1234' }));
+    expect(screen.getByRole('tab', { name: '進階' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('abc1234', { selector: 'code' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('標籤名稱'), { target: { value: 'v1' } });
+    fireEvent.click(screen.getByRole('button', { name: '建立標籤' }));
+    expect(await screen.findByText('git tag v1 abc1234')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'tag', name: 'v1', hash: 'abc1234' }));
+    await waitFor(() => expect(screen.getByLabelText('標籤名稱')).toHaveValue(''));
+  });
+
+  it('stashes from the advanced tab and lists stashes and tags from extras', async () => {
+    git.status.mockResolvedValue(st({ files: [unstagedFile] }));
+    git.extras.mockResolvedValue({ stashes: [{ index: 0, message: 'On main: wip' }], tags: ['v1'] });
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.click(await screen.findByRole('tab', { name: '進階' }));
+    expect(await screen.findByText('stash@{0}')).toBeInTheDocument();
+    expect(screen.getByText('On main: wip')).toBeInTheDocument();
+    expect(screen.getByText('v1')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('收藏說明（選填）'), { target: { value: '暫時' } });
+    fireEvent.click(screen.getByRole('button', { name: '收藏目前變更' }));
+    expect(await screen.findByText('git stash push -u -m 暫時')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'stash', message: '暫時' }));
+    await waitFor(() => expect(screen.getByLabelText('收藏說明（選填）')).toHaveValue(''));
+    fireEvent.click(screen.getByRole('button', { name: '丟棄收藏：stash@{0}' }));
+    expect(await screen.findByText('git stash drop stash@{0}')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我了解風險，執行' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    fireEvent.click(screen.getByRole('button', { name: '取回收藏：stash@{0}' }));
+    expect(await screen.findByText('git stash pop stash@{0}')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '確認' })).toBeInTheDocument();
+  });
+
+  it('after a rejected push offers fetch and pull --rebase but never a force push', async () => {
+    git.run.mockResolvedValue({ ok: false, code: 1, stdout: '', stderr: '! [rejected] main -> main (fetch first)', command: 'git push -u origin HEAD' });
+    render(<GitPanel path={P} commits={[]} revision={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: '推送' }));
+    fireEvent.click(await screen.findByRole('button', { name: '確認' }));
+    const bar = await screen.findByRole('status');
+    expect(bar).toHaveTextContent('推送被拒');
+    expect(within(bar).getByRole('button', { name: '先擷取' })).toBeInTheDocument();
+    expect(screen.queryByText(/強制/)).toBeInTheDocument();   // 提示文字說明「不提供強制推送」
+    expect(screen.queryByRole('button', { name: /強制/ })).not.toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole('button', { name: '拉取（變基）' }));
+    expect(await screen.findByText('git pull --rebase')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '確認' }));
+    await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, { kind: 'pullRebase' }));
+    fireEvent.click(within(bar).getByRole('button', { name: '關閉推送提示' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('commits after confirmation and clears the message', async () => {
@@ -110,7 +246,7 @@ describe('GitPanel', () => {
     git.show.mockResolvedValue('commit abc1234\n+one');
     render(<GitPanel path={P} commits={[{ hash: 'abc1234', date: '2026-09-02T10:00:00+08:00', message: 'chore: init' }]} revision={0} />);
     fireEvent.click(await screen.findByRole('tab', { name: '歷史' }));
-    fireEvent.click(screen.getByRole('button', { name: /abc1234/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看提交：abc1234' }));
     await waitFor(() => expect(git.show).toHaveBeenCalledWith(P, 'abc1234'));
     expect(await screen.findByRole('dialog', { name: '提交：abc1234' })).toBeInTheDocument();
     expect(screen.getByText('+one')).toHaveClass('add');

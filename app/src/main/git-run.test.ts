@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { getBranches, getDiff, getStatus, hasHead, parseStatus, runGit, showCommit, MAX_TEXT, TRUNCATED } from './git-run';
+import { getBranches, getDiff, getExtras, getStatus, hasHead, parseStatus, runGit, showCommit, MAX_TEXT, TRUNCATED } from './git-run';
 
 beforeAll(() => {
   Object.assign(process.env, {
@@ -163,5 +163,23 @@ describe('getDiff / showCommit', () => {
     let linked = false;
     try { symlinkSync(join(dir, 'huge.txt'), join(dir, 'link.txt')); linked = true; } catch { linked = false; }
     if (linked) expect(await getDiff(dir, 'link.txt', 'untracked')).toBe('（無法讀取檔案）');
+  });
+});
+
+describe('getExtras', () => {
+  it('lists stashes newest first (index 0) and tags, empty for a non-repo or a fresh repo', async () => {
+    const plain = mkdtempSync(join(tmpdir(), 'pm-gitrun-'));
+    expect(await getExtras(plain)).toEqual({ stashes: [], tags: [] });
+    const dir = repo();
+    commit(dir, 'a.txt', 'one');
+    expect(await getExtras(dir)).toEqual({ stashes: [], tags: [] });
+    writeFileSync(join(dir, 'a.txt'), 'two');
+    git(dir, 'stash', 'push', '-u', '-m', 'first');
+    writeFileSync(join(dir, 'a.txt'), 'three');
+    git(dir, 'stash', 'push', '-u', '-m', 'second');
+    git(dir, 'tag', 'v1');
+    const ex = await getExtras(dir);
+    expect(ex.stashes).toEqual([{ index: 0, message: 'On main: second' }, { index: 1, message: 'On main: first' }]);
+    expect(ex.tags).toEqual(['v1']);
   });
 });
