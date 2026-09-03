@@ -32,6 +32,9 @@ describe('git handlers', () => {
     await expect(h['git:diff'](outside, 'a.txt', 'unstaged')).rejects.toThrow(/path outside root/);
     await expect(h['git:show'](outside, 'abcdef0')).rejects.toThrow(/path outside root/);
     await expect(h['git:run'](outside, { kind: 'fetch' })).rejects.toThrow(/path outside root/);
+    await expect(h['git:extras'](outside)).rejects.toThrow(/path outside root/);
+    await expect(h['gh:check'](outside)).rejects.toThrow(/path outside root/);
+    await expect(h['gh:repoCreate'](outside, 'x', true)).rejects.toThrow(/path outside root/);
   });
 
   it('rejects malformed file paths, hashes, modes and actions before touching git', async () => {
@@ -43,7 +46,11 @@ describe('git handlers', () => {
     await expect(h['git:run'](dir, { kind: 'stage', file: '/etc/passwd' })).rejects.toThrow(/invalid path/);
     await expect(h['git:run'](dir, { kind: 'switch', branch: '--force' })).rejects.toThrow(/invalid branch/);
     await expect(h['git:run'](dir, { kind: 'commit', message: '   ', amend: false })).rejects.toThrow(/invalid message/);
-    await expect(h['git:run'](dir, { kind: 'reset' } as never)).rejects.toThrow(/invalid action/);
+    await expect(h['git:run'](dir, { kind: 'rebase' } as never)).rejects.toThrow(/invalid action/);
+    await expect(h['git:run'](dir, { kind: 'reset', mode: 'hard', target: 'main' })).rejects.toThrow(/invalid reset target/);
+    await expect(h['git:run'](dir, { kind: 'stashPop', index: -1 })).rejects.toThrow(/invalid stash index/);
+    await expect(h['git:run'](dir, { kind: 'addRemote', url: 'ext::sh -c calc' })).rejects.toThrow(/invalid remote url/);
+    await expect(h['gh:repoCreate'](dir, '-x', true)).rejects.toThrow(/invalid repo name/);
     expect(existsSync(join(dir, '.git'))).toBe(false);
   });
 
@@ -97,5 +104,60 @@ describe('git handlers', () => {
     expect(r.ok).toBe(false);
     expect(r.command).toBe('git push -u origin HEAD');
     expect(`${r.stdout}\n${r.stderr}`).toMatch(/does not appear to be a git repository/);
+  });
+
+  it('stash → tag → revert → reset → abort merge → add remote, with extras in between', async () => {
+    const { dir, h } = setup();
+    await h['git:run'](dir, { kind: 'init' });
+    writeFileSync(join(dir, 'a.txt'), 'one');
+    await h['git:run'](dir, { kind: 'stageAll' });
+    await h['git:run'](dir, { kind: 'commit', message: 'first', amend: false });
+
+    writeFileSync(join(dir, 'a.txt'), 'two');
+    expect(await h['git:run'](dir, { kind: 'stash', message: 'wip' })).toMatchObject({ ok: true, command: 'git stash push -u -m wip' });
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('one');
+    expect(await h['git:extras'](dir)).toEqual({ stashes: [{ index: 0, message: 'On main: wip' }], tags: [] });
+    expect(await h['git:run'](dir, { kind: 'stashPop', index: 0 })).toMatchObject({ ok: true, command: 'git stash pop stash@{0}' });
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('two');
+    await h['git:run'](dir, { kind: 'stash', message: null });
+    expect(await h['git:run'](dir, { kind: 'stashDrop', index: 0 })).toMatchObject({ ok: true, command: 'git stash drop stash@{0}' });
+    expect((await h['git:extras'](dir)).stashes).toEqual([]);
+
+    expect(await h['git:run'](dir, { kind: 'tag', name: 'v1', hash: null })).toMatchObject({ ok: true, command: 'git tag v1' });
+    expect((await h['git:extras'](dir)).tags).toEqual(['v1']);
+    expect(await h['git:run'](dir, { kind: 'deleteTag', name: 'v1' })).toMatchObject({ ok: true, command: 'git tag -d v1' });
+    expect((await h['git:extras'](dir)).tags).toEqual([]);
+
+    writeFileSync(join(dir, 'b.txt'), 'b');
+    await h['git:run'](dir, { kind: 'stageAll' });
+    await h['git:run'](dir, { kind: 'commit', message: 'second', amend: false });
+    const second = git(dir, 'rev-parse', '--short', 'HEAD').trim();
+    expect(await h['git:run'](dir, { kind: 'revert', hash: second })).toMatchObject({ ok: true, command: `git revert --no-edit ${second}` });
+    expect(existsSync(join(dir, 'b.txt'))).toBe(false);
+    expect(git(dir, 'rev-list', '--count', 'HEAD').trim()).toBe('3');
+    expect(await h['git:run'](dir, { kind: 'reset', mode: 'hard', target: 'HEAD~1' })).toMatchObject({ ok: true, command: 'git reset --hard HEAD~1' });
+    expect(git(dir, 'rev-list', '--count', 'HEAD').trim()).toBe('2');
+    expect(existsSync(join(dir, 'b.txt'))).toBe(true);
+    expect(await h['git:run'](dir, { kind: 'reset', mode: 'soft', target: 'HEAD~1' })).toMatchObject({ ok: true, command: 'git reset --soft HEAD~1' });
+    expect((await h['git:status'](dir)).files[0]).toMatchObject({ path: 'b.txt', staged: true });
+    await h['git:run'](dir, { kind: 'commit', message: 'second again', amend: false });
+
+    await h['git:run'](dir, { kind: 'createBranch', branch: 'dev' });
+    writeFileSync(join(dir, 'a.txt'), 'dev side');
+    await h['git:run'](dir, { kind: 'stageAll' });
+    await h['git:run'](dir, { kind: 'commit', message: 'dev', amend: false });
+    await h['git:run'](dir, { kind: 'switch', branch: 'main' });
+    writeFileSync(join(dir, 'a.txt'), 'main side');
+    await h['git:run'](dir, { kind: 'stageAll' });
+    await h['git:run'](dir, { kind: 'commit', message: 'main', amend: false });
+    expect((await h['git:run'](dir, { kind: 'merge', branch: 'dev' })).ok).toBe(false);
+    expect((await h['git:status'](dir)).merging).toBe(true);
+    expect(await h['git:run'](dir, { kind: 'abortMerge' })).toMatchObject({ ok: true, command: 'git merge --abort' });
+    expect((await h['git:status'](dir)).merging).toBe(false);
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('main side');
+
+    expect(await h['git:run'](dir, { kind: 'addRemote', url: 'https://github.com/o/r.git' })).toMatchObject({ ok: true, command: 'git remote add origin https://github.com/o/r.git' });
+    expect((await h['git:status'](dir)).hasRemote).toBe(true);
+    expect(git(dir, 'remote', 'get-url', 'origin').trim()).toBe('https://github.com/o/r.git');
   });
 });
