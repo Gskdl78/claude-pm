@@ -82,6 +82,18 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 .chip.done { border-color: var(--accent); color: var(--accent); }
 .chip.in_progress { border-color: var(--warn); color: var(--warn); }
 .chip.blocked { border-color: var(--danger); color: var(--danger); }
+.chip-current { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+button.chip.current { cursor: pointer; background: var(--panel); }
+button.chip.current:hover:not(:disabled) { background: var(--hover); border-color: var(--accent); }
+button.chip.current:disabled { cursor: default; opacity: .6; }
+.chip .action { font-size: 10px; margin-left: 6px; opacity: .85; }
+.stages .reason { color: var(--danger); font-size: 12px; max-width: 420px; white-space: normal; }
+@keyframes stage-flash {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(78, 201, 176, .18); }
+}
+.stages { border-radius: 6px; padding: 2px 4px; margin: -2px -4px; }
+.stages.flash { animation: stage-flash .5s 3; }
 .docs { display: flex; gap: 6px; flex-wrap: wrap; }
 .docs .doc { font-size: 12px; padding: 2px 8px; }
 .stage-broken { display: flex; align-items: center; gap: 8px; }
