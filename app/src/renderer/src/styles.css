@@ -123,6 +123,12 @@ button.chip.current:disabled { cursor: default; opacity: .6; }
 .xterm-host { position: absolute; inset: 0; padding: 4px; }
 .xterm-host[hidden] { display: none; }
 
+/* --- session 狀態與上限對話框 ------------------------------------------------ */
+.pill.live { border-color: rgba(78,201,176,.5); color: var(--accent); }
+.close-session { padding: 0 6px; line-height: 1; }
+.session-row { display: flex; align-items: center; gap: 8px; }
+.session-row .name { flex: 1; }
+
 /* --- git panel ------------------------------------------------------------ */
 select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
 button.primary { border-color: var(--accent); color: var(--accent); }

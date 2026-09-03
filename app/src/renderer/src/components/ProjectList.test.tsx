@@ -8,10 +8,12 @@ const projects: ProjectInfo[] = [
   { name: 'beta', path: 'C:\\P\\beta', initialized: false, state: null },
 ];
 
+const none = new Set<string>();
+
 describe('ProjectList', () => {
   it('renders projects, marks current, shows init badge, fires callbacks', () => {
     const onSelect = vi.fn(); const onInit = vi.fn(); const onNew = vi.fn(); const onInsights = vi.fn();
-    render(<ProjectList projects={projects} currentPath={'C:\\P\\alpha'} onSelect={onSelect} onInit={onInit} onNew={onNew} onInsights={onInsights} />);
+    render(<ProjectList projects={projects} currentPath={'C:\\P\\alpha'} livePaths={none} waitingPaths={none} onSelect={onSelect} onInit={onInit} onNew={onNew} onInsights={onInsights} onCloseSession={() => {}} />);
     expect(screen.getByText('alpha').closest('.project')).toHaveClass('active');
     expect(screen.getByText('未初始化')).toBeInTheDocument();
     fireEvent.click(screen.getByText('beta'));
@@ -25,7 +27,7 @@ describe('ProjectList', () => {
   });
 
   it('shows empty hint', () => {
-    render(<ProjectList projects={[]} currentPath={null} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} />);
+    render(<ProjectList projects={[]} currentPath={null} livePaths={none} waitingPaths={none} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={() => {}} />);
     expect(screen.getByText('尚無專案')).toBeInTheDocument();
   });
 });
@@ -44,40 +46,53 @@ function stateAt(stage: PmState['stage']): PmState {
 describe('ProjectList stage pill', () => {
   it('shows the current stage label with its status class', () => {
     const p: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
-    render(<ProjectList projects={[p]} currentPath={null} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} />);
+    render(<ProjectList projects={[p]} currentPath={null} livePaths={none} waitingPaths={none} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={() => {}} />);
     expect(screen.getByText(/產品設計/)).toHaveClass('pill', 'in_progress');
   });
 
   it('shows 已完成 for a finished project and 狀態異常 when state is broken', () => {
     const done: ProjectInfo = { name: 'delta', path: 'C:\\P\\delta', initialized: true, state: stateAt('done') };
     const broken: ProjectInfo = { name: 'eps', path: 'C:\\P\\eps', initialized: true, state: null, stateError: 'corrupt' };
-    render(<ProjectList projects={[done, broken]} currentPath={null} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} />);
+    render(<ProjectList projects={[done, broken]} currentPath={null} livePaths={none} waitingPaths={none} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={() => {}} />);
     expect(screen.getByText(/已完成/)).toHaveClass('pill', 'done');
     expect(screen.getByText(/狀態異常/)).toHaveClass('pill', 'blocked');
     expect(screen.queryByRole('button', { name: '初始化' })).toBeNull();
   });
 
-  it('shows a waiting pill only on the project matching waitingPath', () => {
+  it('shows live and waiting pills and a close button for live sessions', () => {
     const a: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
     const b: ProjectInfo = { name: 'delta', path: 'C:\\P\\delta', initialized: true, state: stateAt('design') };
-    render(<ProjectList projects={[a, b]} currentPath={a.path} waitingPath={a.path} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} />);
-    const pills = screen.getAllByText('● 等待回覆');
-    expect(pills).toHaveLength(1);
-    expect(pills[0]).toHaveClass('pill', 'waiting');
-    expect(pills[0].closest('.project')).toHaveTextContent('gamma');
+    const onCloseSession = vi.fn();
+    render(<ProjectList projects={[a, b]} currentPath={a.path} livePaths={new Set([a.path, b.path])} waitingPaths={new Set([b.path])} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={onCloseSession} />);
+    expect(screen.getByText('● 執行中').closest('.project')).toHaveTextContent('gamma');
+    expect(screen.getByText('● 等待回覆').closest('.project')).toHaveTextContent('delta');
+    expect(screen.getAllByRole('button', { name: '關閉 session' })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: '關閉 session' })[1]!);
+    expect(onCloseSession).toHaveBeenCalledWith(b);
   });
 
-  it('shows both 未初始化 and the waiting pill on an uninitialised current project', () => {
+  it('closing a session does not also select the project', () => {
+    const a: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
+    const onSelect = vi.fn();
+    render(<ProjectList projects={[a]} currentPath={null} livePaths={new Set([a.path])} waitingPaths={none} onSelect={onSelect} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '關閉 session' }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('shows 未初始化, the waiting pill and a close button on an uninitialised live project', () => {
     const p: ProjectInfo = { name: 'zeta', path: 'C:\\P\\zeta', initialized: false, state: null };
-    render(<ProjectList projects={[p]} currentPath={p.path} waitingPath={p.path} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} />);
+    render(<ProjectList projects={[p]} currentPath={p.path} livePaths={new Set([p.path])} waitingPaths={new Set([p.path])} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={() => {}} />);
     expect(screen.getByText('未初始化')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '初始化' })).toBeInTheDocument();
     expect(screen.getByText('● 等待回覆')).toHaveClass('pill', 'waiting');
+    expect(screen.getByRole('button', { name: '關閉 session' })).toBeInTheDocument();
   });
 
-  it('shows no waiting pill when waitingPath is null', () => {
+  it('shows no live or waiting pill for a project without a session', () => {
     const a: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
-    render(<ProjectList projects={[a]} currentPath={a.path} waitingPath={null} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} />);
+    render(<ProjectList projects={[a]} currentPath={a.path} livePaths={none} waitingPaths={none} onSelect={() => {}} onInit={() => {}} onNew={() => {}} onInsights={() => {}} onCloseSession={() => {}} />);
     expect(screen.queryByText('● 等待回覆')).toBeNull();
+    expect(screen.queryByText('● 執行中')).toBeNull();
+    expect(screen.queryByRole('button', { name: '關閉 session' })).toBeNull();
   });
 });
