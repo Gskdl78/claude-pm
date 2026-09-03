@@ -45,10 +45,15 @@ export default function App() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   // 設定對話框關閉（儲存或取消）時遞增，讓終端機把焦點要回來
   const [focusSeq, setFocusSeq] = useState(0);
+  // 任一專案的 state 有變動時 +1，讓洞察分頁下次顯示時重讀
+  const [insightsRevision, setInsightsRevision] = useState(0);
+  // 洞察頁要求 git 面板開啟的 commit；seq 讓同一個 hash 也能重複觸發
+  const [revealCommit, setRevealCommit] = useState<{ hash: string; seq: number } | null>(null);
 
   const currentRef = useRef<ProjectInfo | null>(null);
   const launchRef = useRef<{ usedContinue: boolean } | null>(null);
   const noticeId = useRef(0);
+  const revealSeq = useRef(0);
   // 上一次看到的 (專案路徑, stage)；只在同一專案內比較，切專案就重設
   const lastStageRef = useRef<{ path: string; stage: StageName | 'done' } | null>(null);
 
@@ -162,6 +167,7 @@ export default function App() {
   useEffect(() => {
     const offState = pm.onStateChanged((p) => {
       setProjects((prev) => prev.map((x) => (x.path === p.path ? p : x)));
+      setInsightsRevision((n) => n + 1);
       if (currentRef.current?.path === p.path) { noteStageChange(p); setCurrentProject(p); }
     });
     const offGit = pm.onGitChanged((c) => { setCommits(c); setGitRevision((n) => n + 1); });
@@ -206,6 +212,18 @@ export default function App() {
     } catch (e) {
       setError(errorMessage(e));
     }
+  };
+
+  // 洞察頁「查看 commit」：必要時先切到該專案，再請 git 面板開啟 commit。
+  const handleRevealCommit = async (path: string, hash: string) => {
+    if (currentRef.current?.path !== path) {
+      const target = projects.find((p) => p.path === path);
+      if (!target) { setError(`找不到專案：${path}`); return; }
+      await openProject(target);
+      if (currentRef.current?.path !== path) return;   // 開啟失敗或被搶先
+    }
+    revealSeq.current += 1;
+    setRevealCommit({ hash, seq: revealSeq.current });
   };
 
   const closeSettings = useCallback(() => {
@@ -281,7 +299,8 @@ export default function App() {
         </div>
         <ProjectList projects={projects} currentPath={current?.path ?? null}
           waitingPath={ptyIdle && ptyStatus === 'running' ? current?.path ?? null : null}
-          onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }} />
+          onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }}
+          onInsights={() => setCenterTab('insights')} />
       </aside>
       <header className="stage">
         {error && <div className="error">{error}</div>}
@@ -293,9 +312,11 @@ export default function App() {
         path={current?.path ?? null}
         stageDocs={current?.state && current.state.stage !== 'done' ? current.state.stages[current.state.stage].docs ?? [] : []}
         selectedDoc={selectedDoc} onSelectDoc={setSelectedDoc} docsRevision={docsRevision} onNotice={pushNotice}
-        fontSize={config?.termFontSize ?? 14} focusSeq={focusSeq} />
+        fontSize={config?.termFontSize ?? 14} focusSeq={focusSeq}
+        insightsRevision={insightsRevision} onRevealCommit={(p, h) => { void handleRevealCommit(p, h); }} />
       <aside className="git">
-        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight} />
+        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight}
+          revealCommit={revealCommit} />
       </aside>
       <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
       {config && (

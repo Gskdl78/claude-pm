@@ -11,12 +11,21 @@ vi.mock('./components/Terminal', () => ({
   ),
 }));
 
+vi.mock('./components/insights/InsightsView', () => ({
+  InsightsView: ({ hidden, onRevealCommit }: { hidden: boolean; onRevealCommit: (p: string, h: string) => void }) => (
+    <div data-testid="insights" hidden={hidden}><button onClick={() => onRevealCommit('C:\\P\\beta', 'abc1234')}>reveal</button></div>
+  ),
+}));
+
 // 只有檢查 notices 的測試才替換 GitPanel：其餘測試（含既有的 git 面板測試）仍用真的元件。
 // App 在每個測試才動態 import，所以 doMock 必須在 renderApp 之前呼叫。
 function mockGitPanel() {
   vi.doMock('./components/git/GitPanel', () => ({
-    GitPanel: ({ notices }: { notices?: Array<{ id: number; text: string }> }) => (
-      <div data-testid="git-panel">{(notices ?? []).map((n) => <div key={n.id} className="notice">{n.text}</div>)}</div>
+    GitPanel: ({ notices, revealCommit }: { notices?: Array<{ id: number; text: string }>; revealCommit?: { hash: string; seq: number } | null }) => (
+      <div data-testid="git-panel">
+        {(notices ?? []).map((n) => <div key={n.id} className="notice">{n.text}</div>)}
+        <div className="reveal">{revealCommit?.hash}</div>
+      </div>
     ),
   }));
 }
@@ -75,6 +84,12 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       list: vi.fn(async () => []),
       read: vi.fn(async () => ''),
       write: vi.fn(async () => {}),
+    },
+    insights: {
+      collect: vi.fn(async () => ({ items: [], projects: 0, skipped: [] })),
+      pinned: vi.fn(async () => []),
+      pin: vi.fn(async () => []),
+      unpin: vi.fn(async () => []),
     },
     openExternal: vi.fn(async () => {}),
     onDocsChanged: vi.fn((cb) => { listeners.docs.push(cb); return () => {}; }),
@@ -520,5 +535,31 @@ describe('App', () => {
     expect(await screen.findByText('root not found: D:\\Nope')).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(api.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('sidebar 洞察 opens the insights tab without a project', async () => {
+    const api = mockApi();
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '📊 洞察' }));
+    expect(screen.getByRole('tab', { name: '洞察' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('insights')).not.toHaveAttribute('hidden');
+  });
+
+  it('revealing a commit in another project opens that project and hands the hash to the git panel', async () => {
+    mockGitPanel();
+    const alpha = projectAt('alpha', 'design');
+    const beta = projectAt('beta', 'build');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (path: string) => (path.endsWith('alpha') ? alpha : beta)),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await screen.findByRole('button', { name: /產品設計/ });
+    fireEvent.click(screen.getByRole('button', { name: '📊 洞察' }));
+    fireEvent.click(screen.getByRole('button', { name: 'reveal' }));
+    await waitFor(() => expect(api.openProject).toHaveBeenLastCalledWith('C:\\P\\beta'));
+    await waitFor(() => expect(screen.getByText('abc1234', { selector: '.reveal' })).toBeInTheDocument());
+    expect(screen.getByText('beta').closest('.project')).toHaveClass('active');
   });
 });

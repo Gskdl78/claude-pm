@@ -38,6 +38,8 @@ interface Props {
   notices?: Notice[];
   /** 設定裡的資訊框預設高度；使用者拖過的高度優先 */
   defaultLogHeight?: number;
+  /** 洞察頁要求開啟的 commit；seq 讓同一個 hash 也能重複觸發 */
+  revealCommit?: { hash: string; seq: number } | null;
 }
 
 type Pending =
@@ -46,7 +48,7 @@ type Pending =
   | { request: ConfirmRequest; publish: PublishChoice };
 interface Viewer { title: string; text: string }
 
-export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaultLogHeight }: Props) {
+export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaultLogHeight, revealCommit = null }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [branches, setBranches] = useState<GitBranches>(EMPTY_BRANCHES);
@@ -245,6 +247,14 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
     try { setViewer({ title: `提交：${hash}`, text: await pm.git.show(path, hash) }); }
     catch (e) { log('error', `無法讀取提交：${errorMessage(e)}`); }
   };
+
+  // 洞察頁「查看 commit」：切到歷史分頁並開啟該 commit；seq 讓同一 hash 可重複觸發
+  useEffect(() => {
+    if (!revealCommit || !path) return;
+    setTab('history');
+    void openCommit(revealCommit.hash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealCommit?.seq]);
 
   const logPane = (
     <>

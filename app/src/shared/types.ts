@@ -76,6 +76,23 @@ export interface DocEntry { rel: string; size: number; mtimeMs: number }
 /** App 要寫進右欄輸出區的一行提示（例如階段切換、清單提交結果）；id 遞增、只增不減 */
 export interface Notice { id: number; text: string; kind?: 'hint' | 'error' }
 
+// ---- insights ---------------------------------------------------------------
+/** 某個專案 state.json 裡的一筆 issue，加上來源專案 */
+export interface InsightItem extends PmIssue { project: string; path: string }
+export interface InsightGroup { key: string; cause: string; count: number; projects: string[]; fixes: string[]; items: InsightItem[] }
+/** skipped：state 壞掉而被略過的專案名稱 */
+export interface InsightsReport { items: InsightItem[]; projects: number; skipped: string[] }
+export interface PinnedNote { cause: string; fix: string }
+export type InsightStageFilter = 'all' | 'build' | 'verify';
+export type InsightSinceFilter = 'all' | '7d' | '30d';
+export interface InsightsFilter { stage: InsightStageFilter; since: InsightSinceFilter }
+export interface InsightsApi {
+  collect(): Promise<InsightsReport>;
+  pinned(): Promise<PinnedNote[]>;
+  pin(note: PinnedNote): Promise<PinnedNote[]>;
+  unpin(cause: string): Promise<PinnedNote[]>;
+}
+
 // ---- git panel ----------------------------------------------------------------
 export interface GitFileChange {
   path: string;        // repo 相對路徑，git 輸出的正斜線
@@ -189,6 +206,7 @@ export interface PmApi {
   git: GitApi;
   gh: GhApi;
   docs: DocsApi;
+  insights: InsightsApi;
   /** 只開 http(s) / mailto；其他一律拒絕 */
   openExternal(url: string): Promise<void>;
   /** docs/**\/*.md 有新增、刪除或修改（每 2 秒比對一次） */

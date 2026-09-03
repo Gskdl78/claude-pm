@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configPath, defaultConfig, loadConfig, saveConfig, rememberProject } from './config';
+import { configPath, defaultConfig, loadConfig, saveConfig, rememberProject, pinnedNotesPath } from './config';
 import { DEFAULT_SETTINGS } from '../shared/config-schema';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'pm-cfg-'));
@@ -10,6 +10,10 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'pm-cfg-'));
 describe('config', () => {
   it('configPath is under ~/.claude-pm', () => {
     expect(configPath('C:\\Users\\x')).toBe(join('C:\\Users\\x', '.claude-pm', 'config.json'));
+  });
+
+  it('pinnedNotesPath is under ~/.claude-pm', () => {
+    expect(pinnedNotesPath('C:\\Users\\x')).toBe(join('C:\\Users\\x', '.claude-pm', 'pinned-notes.md'));
   });
 
   it('loadConfig returns default when missing or corrupt', () => {

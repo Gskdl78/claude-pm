@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
-import type { AppConfig, ClaudeCheck, ConfigPatch, GitCommit, ProjectInfo, PtyStartOptions } from '../shared/types';
+import type { AppConfig, ClaudeCheck, ConfigPatch, GitCommit, InsightsReport, PinnedNote, ProjectInfo, PtyStartOptions } from '../shared/types';
 import { validatePatch } from '../shared/config-schema';
-import { loadConfig, saveConfig, rememberProject } from './config';
+import { loadConfig, saveConfig, rememberProject, pinnedNotesPath } from './config';
+import { assertNote, collectInsights, pinNote, readPinned, unpinNote, writePinned } from './insights';
 import { assertInsideRoot } from './paths';
 import { listProjects, readProjectInfo, createProject, initExisting, rebuildState } from './projects';
 import { getLog } from './git';
@@ -28,6 +29,8 @@ export interface HandlerDeps {
   pickFolder?: (defaultPath: string) => Promise<string | null>;
   /** 每次設定持久化後呼叫，讓 ipc.ts 更新通知開關等快取 */
   onConfigChanged?: (cfg: AppConfig) => void;
+  /** 釘選注意事項檔；預設 ~/.claude-pm/pinned-notes.md，測試注入暫存路徑 */
+  pinnedFile?: string;
 }
 
 export interface Handlers extends GitHandlers, DocsHandlers {
@@ -48,6 +51,10 @@ export interface Handlers extends GitHandlers, DocsHandlers {
   'pty:write': (data: string) => void;
   'pty:resize': (cols: number, rows: number) => void;
   'pty:kill': () => Promise<void>;
+  'insights:collect': () => Promise<InsightsReport>;
+  'insights:pinned': () => Promise<PinnedNote[]>;
+  'insights:pin': (note: PinnedNote) => Promise<PinnedNote[]>;
+  'insights:unpin': (cause: string) => Promise<PinnedNote[]>;
   dispose: () => void;
 }
 
@@ -73,7 +80,11 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   // 先寫檔再換快取：寫檔失敗時記憶體裡的設定要維持和磁碟一致。
   const persist = (next: AppConfig) => { saveConfig(next, deps.configFile); cfg = next; deps.onConfigChanged?.(cfg); };
   const guard = (p: string) => assertInsideRoot(cfg.root, p);
-  const modelVars = () => ({ implModel: cfg.implModel, reviewModel: cfg.reviewModel, maxRetries: cfg.maxRetries });
+  const pinnedFile = deps.pinnedFile ?? pinnedNotesPath();
+  const modelVars = () => ({
+    implModel: cfg.implModel, reviewModel: cfg.reviewModel, maxRetries: cfg.maxRetries,
+    ...(existsSync(pinnedFile) ? { pinnedFile } : {}),
+  });
 
   const watch = (dir: string) => {
     watcher?.stop();
@@ -163,6 +174,20 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       deps.pty.resize(cols, rows);
     },
     'pty:kill': async () => { deps.pty.kill(); deps.onSessionEnd?.(); },
+
+    'insights:collect': async () => collectInsights(cfg.root),
+    'insights:pinned': async () => readPinned(pinnedFile),
+    'insights:pin': async (note) => {
+      const next = pinNote(readPinned(pinnedFile), assertNote(note));
+      writePinned(pinnedFile, next);
+      return next;
+    },
+    'insights:unpin': async (cause) => {
+      if (typeof cause !== 'string' || cause.trim().length === 0) throw new Error('invalid cause');
+      const next = unpinNote(readPinned(pinnedFile), cause);
+      writePinned(pinnedFile, next);
+      return next;
+    },
 
     dispose: () => { watcher?.stop(); watcher = null; },
   };

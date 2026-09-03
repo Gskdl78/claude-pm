@@ -92,6 +92,7 @@ describe('createProject / initExisting / rebuildState', () => {
     expect(claude).toContain('實作 subagent：`sonnet`');
     expect(claude).toContain('審核退回上限 5 次');
     expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2 })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2']);
+    expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2, pinnedFile: 'C:\\p.md' })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2', '--pinned-file=C:\\p.md']);
     expect(scaffoldArgs()).toEqual([]);
   });
 });

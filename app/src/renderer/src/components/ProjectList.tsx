@@ -8,6 +8,8 @@ interface Props {
   onSelect: (p: ProjectInfo) => void;
   onInit: (p: ProjectInfo) => void;
   onNew: () => void;
+  /** 打開跨專案洞察分頁 */
+  onInsights: () => void;
 }
 
 // The leading dot keeps the pill text distinct from the StagePanel chips, so a
@@ -20,7 +22,7 @@ function stagePill(p: ProjectInfo) {
   return <span className={`pill ${s.stages[s.stage].status}`}>{`● ${STAGE_LABELS[s.stage]}`}</span>;
 }
 
-export function ProjectList({ projects, currentPath, waitingPath = null, onSelect, onInit, onNew }: Props) {
+export function ProjectList({ projects, currentPath, waitingPath = null, onSelect, onInit, onNew, onInsights }: Props) {
   return (
     <div className="projects">
       <button className="new-project" onClick={onNew}>+ 新專案</button>
@@ -44,6 +46,7 @@ export function ProjectList({ projects, currentPath, waitingPath = null, onSelec
           </span>
         </div>
       ))}
+      <button className="insights-entry" onClick={onInsights}>📊 洞察</button>
     </div>
   );
 }

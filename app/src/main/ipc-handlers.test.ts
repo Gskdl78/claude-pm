@@ -14,7 +14,7 @@ beforeAll(() => {
   });
 });
 
-function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged'>> = {}) {
+function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged' | 'pinnedFile'>> = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
@@ -34,7 +34,8 @@ function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd
   const pty = new PtyManager(spawn);
   const send = vi.fn();
   const openPath = vi.fn(async () => '');
-  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), ...extra });
+  // 釘選檔一定要落在暫存目錄裡，測試不可寫到真實家目錄。
+  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), pinnedFile: join(base, 'pinned-notes.md'), ...extra });
   return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes };
 }
 
@@ -276,5 +277,40 @@ describe('ipc handlers', () => {
     const claude = readFileSync(join(created.path, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('實作 subagent：`sonnet`');
     expect(claude).toContain('審核退回上限 2 次');
+  });
+
+  it('insights:collect reads every project under root', async () => {
+    const { h } = setup();
+    const a = await h['projects:create']('ia');
+    const s = JSON.parse(readFileSync(join(a.path, '.pm', 'state.json'), 'utf8'));
+    s.issues = [{ id: 1, stage: 'build', task: null, symptom: 's', cause: 'root cause', fix: 'fix it', commit: 'abc1234', at: '2026-09-01T00:00:00Z' }];
+    writeFileSync(join(a.path, '.pm', 'state.json'), JSON.stringify(s));
+    const r = await h['insights:collect']();
+    expect(r.projects).toBe(1);
+    expect(r.items.map((i) => i.cause)).toEqual(['root cause']);
+  });
+
+  it('insights pin/unpin validate and persist, and new projects carry the pinned notes', async () => {
+    const { h, base } = setup();
+    expect(await h['insights:pinned']()).toEqual([]);
+    const after = await h['insights:pin']({ cause: 'Env 缺少 .env', fix: '加 .env.example' });
+    expect(after).toEqual([{ cause: 'Env 缺少 .env', fix: '加 .env.example' }]);
+    expect(readFileSync(join(base, 'pinned-notes.md'), 'utf8')).toBe('- Env 缺少 .env → 建議：加 .env.example\n');
+    await expect(h['insights:pin']({ cause: '', fix: 'x' })).rejects.toThrow(/須為單行/);
+    const created = await h['projects:create']('pinned');
+    // 範本在 Windows 上可能以 CRLF 簽出，斷言跨行內容前先正規化換行。
+    expect(readFileSync(join(created.path, 'CLAUDE.md'), 'utf8').replace(/\r\n/g, '\n'))
+      .toContain('## 固定注意事項\n- Env 缺少 .env → 建議：加 .env.example');
+    expect(await h['insights:unpin']('env 缺少 .env')).toEqual([]);
+    await expect(h['insights:unpin'](5 as unknown as string)).rejects.toThrow(/invalid cause/);
+  });
+
+  it('projects:init also carries the pinned notes into CLAUDE.md', async () => {
+    const { h, root } = setup();
+    await h['insights:pin']({ cause: 'Timeout', fix: '加重試' });
+    const dir = join(root, 'legacy'); mkdirSync(dir);
+    await h['projects:init'](dir);
+    expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').replace(/\r\n/g, '\n'))
+      .toContain('## 固定注意事項\n- Timeout → 建議：加重試');
   });
 });

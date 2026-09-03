@@ -7,14 +7,20 @@ vi.mock('./Terminal', () => ({
 vi.mock('./docs/DocsTab', () => ({
   DocsTab: ({ hidden, selected }: { hidden: boolean; selected: string | null }) => <div data-testid="docs" hidden={hidden}>{selected ?? 'none'}</div>,
 }));
+vi.mock('./insights/InsightsView', () => ({
+  InsightsView: ({ hidden }: { hidden: boolean }) => <div data-testid="insights" hidden={hidden}>ins</div>,
+}));
 
-import { CenterPane } from './CenterPane';
+import { CenterPane, type CenterTab } from './CenterPane';
 
-function pane(tab: 'terminal' | 'docs', onTab = vi.fn()) {
-  return render(
-    <CenterPane tab={tab} onTab={onTab} status="running" launchSeq={0} onRestart={() => {}}
-      path="C:\\P\\a" stageDocs={[]} selectedDoc="docs/product/prd.md" onSelectDoc={() => {}} docsRevision={0} onNotice={() => {}} />,
-  );
+const el = (tab: CenterTab, onTab: (t: CenterTab) => void) => (
+  <CenterPane tab={tab} onTab={onTab} status="running" launchSeq={0} onRestart={() => {}}
+    path={'C:\\P\\a'} stageDocs={[]} selectedDoc="docs/product/prd.md" onSelectDoc={() => {}} docsRevision={0} onNotice={() => {}}
+    insightsRevision={0} onRevealCommit={() => {}} />
+);
+
+function pane(tab: CenterTab, onTab = vi.fn()) {
+  return render(el(tab, onTab));
 }
 
 describe('CenterPane', () => {
@@ -26,12 +32,24 @@ describe('CenterPane', () => {
     expect(screen.getByRole('tab', { name: '終端機' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(screen.getByRole('tab', { name: '文件' }));
     expect(onTab).toHaveBeenCalledWith('docs');
-    rerender(
-      <CenterPane tab="docs" onTab={onTab} status="running" launchSeq={0} onRestart={() => {}}
-        path="C:\\P\\a" stageDocs={[]} selectedDoc="docs/product/prd.md" onSelectDoc={() => {}} docsRevision={0} onNotice={() => {}} />,
-    );
+    rerender(el('docs', onTab));
     expect(screen.getByTestId('terminal')).toHaveAttribute('hidden');
     expect(screen.getByTestId('docs')).not.toHaveAttribute('hidden');
     expect(screen.getByText('docs/product/prd.md', { selector: '.center-title' })).toBeInTheDocument();
+  });
+
+  it('shows only the insights panel on the insights tab', () => {
+    const onTab = vi.fn();
+    const { rerender } = pane('terminal', onTab);
+    expect(screen.getByTestId('insights')).toHaveAttribute('hidden');
+    fireEvent.click(screen.getByRole('tab', { name: '洞察' }));
+    expect(onTab).toHaveBeenCalledWith('insights');
+    rerender(el('insights', onTab));
+    expect(screen.getByTestId('insights')).not.toHaveAttribute('hidden');
+    expect(screen.getByTestId('terminal')).toHaveAttribute('hidden');
+    expect(screen.getByTestId('docs')).toHaveAttribute('hidden');
+    expect(screen.getByRole('tab', { name: '洞察' })).toHaveAttribute('aria-selected', 'true');
+    // 洞察分頁沒有文件標題
+    expect(document.querySelector('.center-title')).toBeNull();
   });
 });

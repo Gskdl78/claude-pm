@@ -33,12 +33,14 @@ export function listProjects(root: string): ProjectInfo[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export interface ScaffoldVars { implModel: string; reviewModel: string; maxRetries: number }
+export interface ScaffoldVars { implModel: string; reviewModel: string; maxRetries: number; pinnedFile?: string }
 
 /** 轉成 scaffold.mjs 的 CLI 旗標；沒有 vars 就用 plugin 的預設。 */
 export function scaffoldArgs(vars?: ScaffoldVars): string[] {
   if (!vars) return [];
-  return [`--impl-model=${vars.implModel}`, `--review-model=${vars.reviewModel}`, `--max-retries=${vars.maxRetries}`];
+  const args = [`--impl-model=${vars.implModel}`, `--review-model=${vars.reviewModel}`, `--max-retries=${vars.maxRetries}`];
+  if (vars.pinnedFile) args.push(`--pinned-file=${vars.pinnedFile}`);
+  return args;
 }
 
 function scaffoldScript(pluginDir: string): string {
