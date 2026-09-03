@@ -1,4 +1,4 @@
-import type { GitAction, GitStatus } from './types';
+import type { GitAction, GitResetMode, GitStatus } from './types';
 
 export interface GitActionContext {
   /** HEAD 是否存在；還沒有任何 commit 時為 false，unstage / discard 要改走別的指令。 */
@@ -10,6 +10,13 @@ export interface ConfirmSpec {
   description: string;
   danger: boolean;
 }
+
+/** 重設三種模式的白話說明（移植自 git-panel wizards.py）；hard 是唯一會丟工作的模式。 */
+export const RESET_MODES: Record<GitResetMode, string> = {
+  soft: '保留所有變更（只把提交紀錄退回，檔案內容不動）',
+  mixed: '保留檔案變更，但取消暫存（預設模式）',
+  hard: '完全丟棄！檔案內容也會退回，之後的變更全部消失',
+};
 
 /** 動作 → git argv。renderer 用它預覽指令，主程序用同一份執行，保證兩者一致。 */
 export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
@@ -29,6 +36,16 @@ export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
     case 'push': return ['push', '-u', 'origin', 'HEAD'];
     case 'pull': return ['pull'];
     case 'fetch': return ['fetch'];
+    case 'pullRebase': return ['pull', '--rebase'];
+    case 'stash': return a.message === null ? ['stash', 'push', '-u'] : ['stash', 'push', '-u', '-m', a.message];
+    case 'stashPop': return ['stash', 'pop', `stash@{${a.index}}`];
+    case 'stashDrop': return ['stash', 'drop', `stash@{${a.index}}`];
+    case 'reset': return ['reset', `--${a.mode}`, a.target];
+    case 'revert': return ['revert', '--no-edit', a.hash];
+    case 'tag': return a.hash === null ? ['tag', a.name] : ['tag', a.name, a.hash];
+    case 'deleteTag': return ['tag', '-d', a.name];
+    case 'abortMerge': return ['merge', '--abort'];
+    case 'addRemote': return ['remote', 'add', 'origin', a.url];
   }
 }
 
@@ -36,9 +53,13 @@ function quote(arg: string): string {
   return /[\s"]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg;
 }
 
-/** 只供顯示：省略固定的 -c 前綴，含空白或雙引號的參數加引號。 */
+/** 只供顯示：含空白或雙引號的參數加引號。git 版省略固定的 -c 前綴；gh 版由 gh-actions.ts 包裝。 */
+export function formatCommand(exe: string, args: string[]): string {
+  return [exe, ...args.map(quote)].join(' ');
+}
+
 export function formatGitCommand(args: string[]): string {
-  return ['git', ...args.map(quote)].join(' ');
+  return formatCommand('git', args);
 }
 
 /** 回傳 null 表示不需要確認（可逆且不動工作目錄）。 */
@@ -74,5 +95,29 @@ export function describeGitAction(a: GitAction, st: GitStatus): ConfirmSpec | nu
     }
     case 'pull':
       return { title: '拉取', description: '從遠端（origin）下載最新的提交並合併到目前分支。', danger: false };
+    case 'pullRebase':
+      return { title: '拉取（變基）', description: '從遠端（origin）下載最新的提交，並把你的本地提交接到它們之後（rebase）。若有衝突需要手動解決。', danger: false };
+    case 'stash':
+      return {
+        title: '收藏變更',
+        description: `把目前所有未提交的變更（含新檔案）先收起來，讓工作目錄變乾淨；之後可用「取回」拿回來。${a.message === null ? '' : `說明：「${a.message}」。`}`,
+        danger: false,
+      };
+    case 'stashPop':
+      return { title: '取回收藏', description: `把收藏 stash@{${a.index}} 的變更放回工作目錄，並從收藏清單移除。若與目前變更衝突，需要手動解決。`, danger: false };
+    case 'stashDrop':
+      return { title: '丟棄收藏', description: `永久刪除收藏 stash@{${a.index}}，裡面的變更無法從 git 找回。`, danger: true };
+    case 'reset':
+      return { title: '重設', description: `把目前的 ${st.branch} 退回到 ${a.target}。模式 ${a.mode}：${RESET_MODES[a.mode]}`, danger: a.mode === 'hard' };
+    case 'revert':
+      return { title: '還原提交', description: `建立一個新提交來抵銷 ${a.hash} 的變更（原本的歷史紀錄會保留）。若與後來的提交衝突，需要手動解決。`, danger: false };
+    case 'tag':
+      return { title: '建立標籤', description: `${a.hash === null ? '在目前的提交上' : `在提交 ${a.hash} 上`}建立標籤 ${a.name}，方便日後找到這個版本。`, danger: false };
+    case 'deleteTag':
+      return { title: '刪除標籤', description: `刪除本地標籤 ${a.name}（若已推送到遠端，遠端的標籤不受影響）。`, danger: false };
+    case 'abortMerge':
+      return { title: '中止合併', description: '放棄這次合併，工作目錄與索引回到合併前的狀態；合併過程中手動改過的衝突檔案會被還原。', danger: false };
+    case 'addRemote':
+      return { title: '設定遠端', description: `把這個專案連到 ${a.url}（遠端名稱 origin）。`, danger: false };
   }
 }
