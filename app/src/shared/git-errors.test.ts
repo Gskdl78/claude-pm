@@ -63,3 +63,12 @@ describe('isPushRejected', () => {
     expect(isPushRejected('')).toBe(false);
   });
 });
+
+describe('explainGitError (git panel polish)', () => {
+  it('explains reverting a merge commit and a stale hunk patch', () => {
+    const merge = explainGitError('error: commit abc1234 is a merge but no -m option was given.\nfatal: revert failed');
+    expect(merge).toMatch(/合併提交/);
+    expect(merge).toMatch(/git revert -m 1/);
+    expect(explainGitError('error: patch failed: a.txt:1\nerror: a.txt: patch does not apply')).toBe('這段變更已與目前內容不一致，請重新開啟 diff 再試。');
+  });
+});

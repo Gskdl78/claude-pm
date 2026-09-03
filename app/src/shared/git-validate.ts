@@ -15,6 +15,8 @@ export const MAX_URL = 2048;
 export const REPO_NAME_RE = /^(?!-)[A-Za-z0-9._-]{1,100}$/;
 export const MAX_STASH_INDEX = 999;
 export const MAX_STASH_MESSAGE = 200;
+/** 逐 hunk 暫存的 patch 上限；diff 本身已被 clip 在 512 KB，超過就不是面板切出來的。 */
+export const MAX_PATCH = 1024 * 1024;
 
 function str(v: unknown, what: string): string {
   if (typeof v !== 'string' || v.length === 0 || v.includes('\0')) throw new Error(`invalid ${what}`);
@@ -109,6 +111,24 @@ export function assertRepoName(v: unknown): string {
   return n;
 }
 
+/**
+ * 單檔 patch（renderer 由 diff 文字切出的一段）：≤ MAX_PATCH、無 NUL、以 diff --git a/ 開頭；
+ * 每個 --- / +++ 路徑只能是 /dev/null 或 a/、b/ 加 repo 相對路徑，避免 patch 指向 repo 外。
+ */
+export function assertPatch(v: unknown): string {
+  const p = str(v, 'patch');
+  if (p.length > MAX_PATCH || !p.startsWith('diff --git a/')) throw new Error('invalid patch');
+  for (const line of p.split('\n')) {
+    const m = /^(---|\+\+\+) (.*)$/.exec(line);
+    if (!m) continue;
+    const target = m[2]!.replace(/\r$/, '');
+    if (target === '/dev/null') continue;
+    if (!/^[ab]\//.test(target)) throw new Error('invalid patch');
+    assertRelPath(target.slice(2));
+  }
+  return p;
+}
+
 /** renderer 傳來的 action 是不可信輸入：只接受白名單 kind，並重建一個乾淨物件。 */
 export function validateGitAction(v: unknown): GitAction {
   if (!v || typeof v !== 'object') throw new Error('invalid action');
@@ -138,6 +158,8 @@ export function validateGitAction(v: unknown): GitAction {
     case 'deleteTag': return { kind: 'deleteTag', name: assertTagName(a.name) };
     case 'addRemote': return { kind: 'addRemote', url: assertRemoteUrl(a.url) };
     case 'commitPaths': return { kind: 'commitPaths', message: assertMessage(a.message), paths: assertRelPaths(a.paths) };
+    case 'applyPatch': return { kind: 'applyPatch', patch: assertPatch(a.patch), reverse: a.reverse === true };
+    case 'sync': return { kind: 'sync' };
     default: throw new Error('invalid action');
   }
 }

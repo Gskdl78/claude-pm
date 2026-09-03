@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   assertBranch, assertDiffMode, assertHash, assertMessage, assertRelPath, assertRemoteUrl, assertRepoName,
   assertResetMode, assertResetTarget, assertStashIndex, assertStashMessage, assertTagName, validateGitAction,
+  assertPatch, MAX_PATCH,
 } from './git-validate';
 
 describe('assertRelPath', () => {
@@ -127,5 +128,29 @@ describe('commitPaths validation', () => {
     expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: ['../a'] })).toThrow(/invalid path/);
     expect(() => validateGitAction({ kind: 'commitPaths', message: 'x', paths: Array(101).fill('a') })).toThrow(/invalid paths/);
     expect(() => validateGitAction({ kind: 'commitPaths', message: ' ', paths: ['a'] })).toThrow(/invalid message/);
+  });
+});
+
+describe('assertPatch / applyPatch / sync validation', () => {
+  const PATCH = ['diff --git a/src/a.ts b/src/a.ts', 'index 1111111..2222222 100644', '--- a/src/a.ts', '+++ b/src/a.ts', '@@ -1 +1 @@', '-a', '+b', ''].join('\n');
+  it('accepts a well-formed single-file patch, including /dev/null sides', () => {
+    expect(assertPatch(PATCH)).toBe(PATCH);
+    const created = 'diff --git a/n.txt b/n.txt\nnew file mode 100644\n--- /dev/null\n+++ b/n.txt\n@@ -0,0 +1 @@\n+x\n';
+    expect(assertPatch(created)).toBe(created);
+  });
+  it('rejects non-strings, oversized, NUL, wrong header and escaping paths', () => {
+    expect(() => assertPatch(42)).toThrow(/invalid patch/);
+    expect(() => assertPatch('')).toThrow(/invalid patch/);
+    expect(() => assertPatch(PATCH + 'x'.repeat(MAX_PATCH))).toThrow(/invalid patch/);
+    expect(() => assertPatch(PATCH.replace('-a', '-a\0'))).toThrow(/invalid patch/);
+    expect(() => assertPatch('--- a/x\n+++ b/x\n')).toThrow(/invalid patch/);
+    expect(() => assertPatch(PATCH.replace('+++ b/src/a.ts', '+++ b/../x'))).toThrow(/invalid path/);
+    expect(() => assertPatch(PATCH.replace('--- a/src/a.ts', '--- C:/x'))).toThrow(/invalid patch/);
+  });
+  it('rebuilds applyPatch (reverse must be exactly true) and sync', () => {
+    expect(validateGitAction({ kind: 'applyPatch', patch: PATCH, reverse: 'yes' })).toEqual({ kind: 'applyPatch', patch: PATCH, reverse: false });
+    expect(validateGitAction({ kind: 'applyPatch', patch: PATCH, reverse: true })).toEqual({ kind: 'applyPatch', patch: PATCH, reverse: true });
+    expect(() => validateGitAction({ kind: 'applyPatch', patch: 'nope', reverse: false })).toThrow(/invalid patch/);
+    expect(validateGitAction({ kind: 'sync', extra: 1 })).toEqual({ kind: 'sync' });
   });
 });

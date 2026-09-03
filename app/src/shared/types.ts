@@ -169,7 +169,11 @@ export type GitAction =
   | { kind: 'deleteTag'; name: string }
   | { kind: 'abortMerge' }
   | { kind: 'addRemote'; url: string }
-  | { kind: 'commitPaths'; message: string; paths: string[] };
+  | { kind: 'commitPaths'; message: string; paths: string[] }
+  /** 把一段 patch 套進索引（逐 hunk 暫存 / 取消暫存）；patch 走 stdin */
+  | { kind: 'applyPatch'; patch: string; reverse: boolean }
+  /** 拉取（變基）後推送；沒有上游時直接推送並建立追蹤。主程序以 syncRepo 多步驟執行 */
+  | { kind: 'sync' };
 
 export interface GitApi {
   status(path: string): Promise<GitStatus>;
