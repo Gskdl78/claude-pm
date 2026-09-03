@@ -28,12 +28,14 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 
 ## Git 面板
 
-右欄（360px）是內建的 git 面板：上方是分支狀態與「推送 / 拉取 / 擷取」，中間是「變更 / 分支 / 歷史」三個分頁，下方是輸出區。
+右欄（360px）是內建的 git 面板：上方是分支狀態與「推送 / 拉取 / 擷取」，中間是「變更 / 分支 / 歷史 / 進階」四個分頁，下方是輸出區。
 
 - 每個會改變狀態的按鈕都先彈出確認框，顯示白話說明與將執行的確切 git 指令；會丟失工作的操作（丟棄、修改上一次提交）以紅色危險樣式呈現，焦點預設在「取消」。
 - git 失敗時輸出區顯示繁體中文說明並附原始輸出；對映表在 `src/shared/git-errors.ts`。
 - 面板在每次動作後、`.git` 有變化時（500ms 輪詢 `logs/HEAD`、`HEAD`、`index`、`MERGE_HEAD`、`refs/heads`、`FETCH_HEAD`、`packed-refs`）以及每 3 秒（視窗可見時）重讀狀態，所以終端機裡 Claude Code 的 git 操作與檔案編輯都會反映在面板。
-- 尚未設定遠端時，推送 / 拉取只提示如何 `git remote add origin`；「發佈到 GitHub」精靈、stash / reset / revert / tag / 中止合併屬於下一批次。
+- 「進階」分頁：收藏（`git stash push -u`，可附說明；清單可「取回」或「丟棄」）、重設（soft / mixed / hard 到 `HEAD~n` 或 hash；hard 為紅色危險確認）、標籤（建立於 HEAD 或指定提交、刪除、列表）。「歷史」分頁每筆 commit 有「還原 / 重設到此 / 標籤」；合併中的衝突橫幅有「中止合併」。
+- 尚未設定遠端時按「推送 / 拉取」會開啟「發佈到 GitHub」精靈：偵測 GitHub CLI（`gh --version`、`gh auth status`）後可選「新建 GitHub 倉庫」（`gh repo create <名稱> --private|--public --source=. --remote=origin --push`）或「貼現有倉庫網址」（`git remote add origin <網址>` + `git push -u origin HEAD`；只接受 `https://` 或 `git@主機:帳號/倉庫`）。推送被拒時面板提示「先擷取」或「拉取（變基）」，不提供強制推送。
+- `gh` 與 git 一樣在主程序以 `execFile` 執行，argv 只有三種白名單；倉庫名稱與網址都先驗證。
 - 所有 git 都在主程序以 `execFile('git', argv)` 執行，路徑必須位於專案根目錄之內，檔案路徑、分支名、hash、訊息都經驗證後才組成 argv。
 
 ### 手動驗收清單（批次一）
@@ -48,6 +50,19 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 8. 在終端機 `git remote add origin <本地 bare repo 路徑>` 後按「推送」：確認框顯示 `git push -u origin HEAD`；成功後「無遠端」pill 消失、`↑` 歸零。
 9. 在 root 底下開一個非 git 資料夾（未初始化專案）：面板顯示「這個資料夾還不是 git 專案」；「初始化」確認後切換成完整面板。
 10. 在終端機執行 `git switch -c y`：0.5 秒內狀態列變成 `● y`。
+
+### 手動驗收清單（批次二）
+
+1. 「進階」分頁：改一個檔案 → 輸入說明「暫時」→「收藏目前變更」：確認框顯示 `git stash push -u -m 暫時`；確認後「變更」清空、清單出現 `stash@{0}`；「取回」後變更回來、清單清空。
+2. 「丟棄」一筆收藏：紅色危險確認、焦點在「取消」；執行後清單移除。
+3. 建立標籤 `v1`：清單出現；在終端機執行 `git tag v2`：0.5 秒內清單出現 v2（需停在「進階」頁）；「刪除」v2。
+4. 「歷史」→ 最新一筆「還原」：確認框 `git revert --no-edit <hash>`；確認後歷史多一筆 `Revert "…"`。
+5. 「歷史」→ 某筆「重設到此」：自動切到「進階」、目標填入 hash；選 `hard` → 重設鈕變紅、確認框為危險樣式、按 Enter 不會執行；確認後歷史縮短、工作目錄回到該版本。選 `soft` 重設 `HEAD~1`：確認框為一般樣式，執行後上一筆的變更出現在「已暫存」。
+6. 製造合併衝突：橫幅出現「中止合併」；確認 `git merge --abort` 後橫幅消失、檔案回復。
+7. 沒有遠端時按「推送」：精靈顯示 gh 安裝 / 登入狀態；未安裝 gh 時「新建」停用並提示 `winget install GitHub.cli`。
+8. 精靈「貼現有倉庫網址」：貼 `http://…` 顯示不合法；貼 `https://github.com/<你>/<空倉庫>.git` → 下一步 → 確認框兩行指令 → 執行後「無遠端」pill 消失、輸出區兩個「完成 ✓」。
+9. 已安裝並登入 gh：精靈「新建」預設倉庫名 = 資料夾名、私人 → 確認框 `gh repo create … --private --source=. --remote=origin --push` → 執行後 GitHub 上出現倉庫、狀態列 `→ origin/main`。
+10. 在 GitHub 網頁上對倉庫多加一個 commit，再按「推送」：輸出區白話「推送被拒」，狀態列下方出現黃色提示列，只有「先擷取」「拉取（變基）」，沒有任何強制推送；「拉取（變基）」確認 `git pull --rebase` 後再推送成功、提示列消失。
 
 ## 終端機快捷鍵
 
