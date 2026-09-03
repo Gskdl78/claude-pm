@@ -347,4 +347,14 @@ describe('GitPanel', () => {
     expect(await screen.findByText('階段 產品設計 完成 → 技術設計')).toBeInTheDocument();
     expect(screen.getAllByText(/^階段 /)).toHaveLength(2);
   });
+
+  it('keeps a notice that arrives together with a project switch', async () => {
+    const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} notices={[]} />);
+    await screen.findByText('main');
+    // 同一次 render 換專案又收到提示：清空輸出的 effect 必須先跑，提示才不會被洗掉
+    rerender(<GitPanel path={P2} commits={[]} revision={0} notices={[{ id: 1, text: '階段 環境搭建 完成 → 產品設計' }]} />);
+    // 換專案會重新挂載面板內容，等新專案的狀態讀完再查輸出區
+    await screen.findByText('main');
+    expect(await screen.findByText('階段 環境搭建 完成 → 產品設計')).toBeInTheDocument();
+  });
 });

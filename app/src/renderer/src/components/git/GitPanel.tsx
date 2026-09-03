@@ -26,6 +26,8 @@ export const STATUS_POLL_MS = 3000;
 const MAX_LOG = 200;
 const EMPTY_BRANCHES: GitBranches = { current: '', all: [] };
 const EMPTY_EXTRAS: GitExtras = { stashes: [], tags: [] };
+// 沒有提示時共用同一個陣列，避免每次 render 都產生新的參考而重跑 effect
+const NO_NOTICES: Notice[] = [];
 
 interface Props {
   path: string | null;
@@ -42,7 +44,7 @@ type Pending =
   | { request: ConfirmRequest; publish: PublishChoice };
 interface Viewer { title: string; text: string }
 
-export function GitPanel({ path, commits, revision, notices = [] }: Props) {
+export function GitPanel({ path, commits, revision, notices = NO_NOTICES }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [branches, setBranches] = useState<GitBranches>(EMPTY_BRANCHES);
@@ -76,15 +78,6 @@ export function GitPanel({ path, commits, revision, notices = [] }: Props) {
     setEntries((prev) => [...prev, entry].slice(-MAX_LOG));
   }, []);
 
-  const lastNoticeRef = useRef(0);
-  useEffect(() => {
-    for (const n of notices) {
-      if (n.id <= lastNoticeRef.current) continue;
-      lastNoticeRef.current = n.id;
-      log('hint', n.text);
-    }
-  }, [notices, log]);
-
   const refresh = useCallback(async () => {
     if (!path) { setStatus(null); return; }
     seqRef.current += 1;
@@ -114,6 +107,16 @@ export function GitPanel({ path, commits, revision, notices = [] }: Props) {
     setMessage(''); setAmend(false); setNewBranch('');
     setAdv(EMPTY_ADVANCED_FORM); setExtras(EMPTY_EXTRAS); setWizardOpen(false); setRejected(false);
   }, [path]);
+
+  // 必須排在上面的重設之後：同一次 render 換專案又收到提示時，才不會先寫進輸出再被清空
+  const lastNoticeRef = useRef(0);
+  useEffect(() => {
+    for (const n of notices) {
+      if (n.id <= lastNoticeRef.current) continue;
+      lastNoticeRef.current = n.id;
+      log('hint', n.text);
+    }
+  }, [notices, log]);
 
   // 專案切換與 watcher 事件（revision）→ 立即重讀
   useEffect(() => { void refresh(); }, [refresh, revision]);

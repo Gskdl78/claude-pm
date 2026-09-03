@@ -4,7 +4,7 @@ import { StagePanel, FLASH_MS } from './StagePanel';
 import type { ProjectInfo, PmState } from '../../../shared/types';
 
 const project: ProjectInfo = {
-  name: 'demo', path: 'C:\P\demo', initialized: true,
+  name: 'demo', path: 'C:\\P\\demo', initialized: true,
   state: {
     version: 1, name: 'demo', type: 'web', stage: 'design',
     stages: {
@@ -52,14 +52,23 @@ describe('StagePanel', () => {
     expect(onRunStage).toHaveBeenCalledWith('design');
   });
 
-  it('pending current stage says 開始 and blocked says 重跑 with its reason', () => {
+  it('pending current stage says 開始; a done chip without a time shows only its commit', () => {
     renderPanel(withState({ stage: 'tech' }, { design: { status: 'done', commit: 'def5678' } }));
     expect(screen.getByRole('button', { name: /技術設計/ })).toHaveTextContent('開始');
+    expect(screen.getByText('產品設計').closest('.chip')).toHaveAttribute('title', 'commit def5678');
+  });
 
-    const { unmount } = renderPanel(withState({}, { design: { status: 'blocked', reason: '缺少 PRD 確認' } }));
+  it('blocked current stage says 重跑 with its reason', () => {
+    renderPanel(withState({}, { design: { status: 'blocked', reason: '缺少 PRD 確認' } }));
     expect(screen.getByRole('button', { name: /產品設計/ })).toHaveTextContent('重跑');
     expect(screen.getByText('缺少 PRD 確認')).toHaveClass('reason');
-    unmount();
+  });
+
+  it('never offers an action on a stage already marked done', () => {
+    // 狀態異常：stage 停在已完成的階段，此時不該出現空動作的按鈕
+    renderPanel(withState({ stage: 'design' }, { design: { status: 'done', commit: 'x' } }));
+    expect(screen.queryByRole('button', { name: /產品設計/ })).toBeNull();
+    expect(screen.getByText('產品設計').closest('.chip')!.tagName).toBe('SPAN');
   });
 
   it('disables the stage button while claude is busy', () => {

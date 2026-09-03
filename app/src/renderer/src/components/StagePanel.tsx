@@ -58,7 +58,9 @@ export function StagePanel({ project, canRun, flashSeq, onRebuild, onOpenDoc, on
       <div className={`stages${flashing ? ' flash' : ''}`}>
         {STAGE_NAMES.map((st) => {
           const info = s.stages[st];
-          if (st !== current) {
+          // 已完成的階段沒有動作可送（狀態異常時 stage 仍可能指向它），一律當成純標籤
+          const actionable = st === current && info.status !== 'done';
+          if (!actionable) {
             return (
               <span key={st} className={`chip ${info.status}`} title={info.status === 'done' ? doneTitle(info) : info.reason ?? ''}>
                 {STAGE_LABELS[st]}
