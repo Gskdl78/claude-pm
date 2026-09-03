@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SessionManager, MAX_SESSIONS, buildClaudeArgs, findClaude, type PtyLike, type SpawnFn } from './pty';
+import { SessionManager, MAX_SESSIONS, buildClaudeArgs, findClaude, sanitizeEnv, type PtyLike, type SpawnFn } from './pty';
 
 function fakeSpawn() {
   const calls: Array<{ file: string; args: string[]; opts: { cwd: string; cols: number; rows: number } }> = [];
@@ -120,5 +120,15 @@ describe('findClaude', () => {
     const r = await findClaude();
     expect(typeof r.ok).toBe('boolean');
     if (r.ok) expect(r.path).toMatch(/claude/i);
+  });
+});
+
+describe('sanitizeEnv', () => {
+  it('drops Claude Code child-session markers but keeps user settings', () => {
+    const out = sanitizeEnv({
+      CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_PID: '5', CLAUDE_EFFORT: 'x', CLAUDE_PLUGIN_DATA: 'y',
+      CLAUDE_CONFIG_DIR: 'C:\cfg', ANTHROPIC_API_KEY: 'k', PATH: 'p',
+    });
+    expect(Object.keys(out).sort()).toEqual(['ANTHROPIC_API_KEY', 'CLAUDE_CONFIG_DIR', 'PATH']);
   });
 });

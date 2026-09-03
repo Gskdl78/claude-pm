@@ -28,6 +28,16 @@ export interface StartOptions {
   rows: number;
 }
 
+/**
+ * App 若是從 Claude Code 對話裡啟動（例如開發時用 npm run dev），會繼承 Claude Code 標記自己
+ * 子行程的環境變數；終端機裡的 claude 看到它們會把自己當成子 session（關掉逐字稿等）。
+ * 只移除這些標記，保留使用者自己設定的 CLAUDE_CONFIG_DIR / ANTHROPIC_* 等。
+ */
+const CLAUDE_MARKER_RE = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PLUGIN_DATA)$/;
+export function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !CLAUDE_MARKER_RE.test(k)));
+}
+
 export const MAX_SESSIONS = 4;
 
 /** 預設 spawn：延遲載入 node-pty，避免測試環境載入原生模組。 */
@@ -83,7 +93,7 @@ export class SessionManager extends EventEmitter {
     const [file, args] = process.platform === 'win32'
       ? ['cmd.exe', ['/c', opts.command, ...opts.args]]
       : [opts.command, opts.args];
-    const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    const env = { ...sanitizeEnv(process.env), TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     const proc = this.spawn(file, args, { cwd: path, cols: opts.cols, rows: opts.rows, env });
     const idle = this.idleFactory();
     const s: Session = { proc, idle, label: basename(path) };
