@@ -30,6 +30,8 @@ describe('IdleDetector', () => {
   it('emits busy once when output resumes and idle again after another silence', () => {
     const d = new IdleDetector(3000);
     const events = track(d);
+    // 同步監聽器看到的必須已經是 busy 狀態
+    d.on('busy', () => { expect(d.isIdle()).toBe(false); });
     d.feed();
     vi.advanceTimersByTime(3000);
     d.feed();

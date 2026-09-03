@@ -17,6 +17,8 @@ export interface HandlerDeps {
   checkClaude?: () => Promise<ClaudeCheck>;
   /** pty 成功啟動後呼叫，帶專案目錄（已通過 root 守衛） */
   onSessionStart?: (dir: string) => void;
+  /** pty 被主動終止後呼叫；kill() 不會觸發 exit 事件，需由此清掉等待輸入狀態 */
+  onSessionEnd?: () => void;
 }
 
 export interface Handlers extends GitHandlers {
@@ -126,7 +128,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       if (typeof rows !== 'number' || !Number.isFinite(rows)) return;
       deps.pty.resize(cols, rows);
     },
-    'pty:kill': async () => deps.pty.kill(),
+    'pty:kill': async () => { deps.pty.kill(); deps.onSessionEnd?.(); },
 
     dispose: () => { watcher?.stop(); watcher = null; },
   };

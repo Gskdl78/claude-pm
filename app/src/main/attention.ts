@@ -20,13 +20,24 @@ function electronNotification(): typeof import('electron').Notification {
   return (require('electron') as typeof import('electron')).Notification;
 }
 
-/** 用 Electron Notification 發通知；點擊通知把視窗帶到前景。 */
-export function electronNotify(win: { show(): void; focus(): void; isDestroyed(): boolean }): Notify {
+/** 用 Electron Notification 發通知；點擊通知把視窗帶到前景（最小化時先還原，Windows 才會真的浮上來）。 */
+export function electronNotify(win: {
+  show(): void;
+  focus(): void;
+  isDestroyed(): boolean;
+  isMinimized(): boolean;
+  restore(): void;
+}): Notify {
   return (title, body) => {
     const Notification = electronNotification();
     if (!Notification.isSupported()) return;
     const n = new Notification({ title, body });
-    n.on('click', () => { if (!win.isDestroyed()) { win.show(); win.focus(); } });
+    n.on('click', () => {
+      if (win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    });
     n.show();
   };
 }

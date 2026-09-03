@@ -33,8 +33,10 @@ export class IdleDetector extends EventEmitter {
 
   feed(): void {
     this.clearTimer();
-    if (this.phase === 'idle') this.emit('busy');
+    // 先切換狀態再發事件，讓同步監聽器呼叫 isIdle() 時看到的是最新狀態
+    const wasIdle = this.phase === 'idle';
     this.phase = 'busy';
+    if (wasIdle) this.emit('busy');
     this.handle = this.timers.set(() => {
       this.handle = null;
       this.phase = 'idle';

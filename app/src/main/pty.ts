@@ -73,7 +73,8 @@ export class PtyManager extends EventEmitter {
     const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     const proc = this.spawn(file, args, { cwd: opts.cwd, cols: opts.cols, rows: opts.rows, env });
     this.proc = proc;
-    proc.onData((d) => this.emit('data', d));
+    // 已被取代或已 kill 的行程仍可能吐出尾端輸出，一律丟棄（與 onExit 同樣的守衛）
+    proc.onData((d) => { if (this.proc !== proc) return; this.emit('data', d); });
     proc.onExit(({ exitCode }) => {
       if (this.proc !== proc) return;
       this.proc = null;
