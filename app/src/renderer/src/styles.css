@@ -224,7 +224,9 @@ button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
 .wizard-fields input:not([type='radio']) { width: 100%; }
 
 /* --- center pane (terminal / docs tabs) ---------------------------------- */
-.center { grid-area: term; display: flex; flex-direction: column; min-height: 0; }
+/* 用 section.center 提高權重：.center 也被載入中／找不到 Claude 的置中畫面使用，
+   那條規則的 align-items/justify-content/gap 會讓分頁列與內容縮成內容寬度。 */
+section.center { grid-area: term; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0; min-height: 0; }
 .center-tabs { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .center-tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0 10px; height: 100%; color: var(--muted); }
 .center-tab:hover { color: var(--fg); border-bottom-color: var(--border); }
