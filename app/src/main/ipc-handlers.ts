@@ -8,6 +8,7 @@ import { createGitHandlers, type GitHandlers } from './git-handlers';
 import { createDocsHandlers, type DocsHandlers } from './docs-handlers';
 import { PtyManager, buildClaudeArgs, findClaude } from './pty';
 import { ProjectWatcher } from './watcher';
+import { BLOCKED_OPEN_EXT_RE, isExternalUrl } from './url-policy';
 
 export interface HandlerDeps {
   pluginDir: string;
@@ -113,11 +114,13 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'shell:openPath': async (path) => {
       const p = guard(path);
+      // 文件裡的連結最後會走到這裡，不能讓它啟動 .bat/.exe 之類的可執行檔。
+      if (BLOCKED_OPEN_EXT_RE.test(p)) throw new Error('refusing to open executable file');
       return deps.openPath ? deps.openPath(p) : '';
     },
 
     'shell:openExternal': async (url) => {
-      if (typeof url !== 'string' || url.length === 0 || url.length > 2048 || !/^(https?|mailto):/i.test(url)) throw new Error('invalid url');
+      if (!isExternalUrl(url)) throw new Error('invalid url');
       await deps.openExternal?.(url);
     },
 

@@ -25,6 +25,9 @@ function loadMermaid(): Promise<Mermaid> {
 
 let renderSeq = 0;
 
+/** 只交給系統開啟可檢視的檔案，避免文件裡的連結啟動 .bat/.exe。 */
+export const OPENABLE_EXT_RE = /\.(html?|pdf|png|jpe?g|gif|svg|txt|csv|json|md)$/i;
+
 export function MarkdownView({ html, fromRel, onNavigate, onOpenExternal, onOpenPath }: Props) {
   const root = useRef<HTMLDivElement>(null);
 
@@ -61,14 +64,20 @@ export function MarkdownView({ html, fromRel, onNavigate, onOpenExternal, onOpen
     const a = (e.target as HTMLElement).closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href') ?? '';
-    e.preventDefault();
+    // 純錨點交給瀏覽器自己捲動，不要攔截。
     if (href.startsWith('#')) return;
+    e.preventDefault();
     if (/^(https?|mailto):/i.test(href)) { onOpenExternal(href); return; }
     const doc = resolveDocLink(fromRel, href);
     if (doc) { onNavigate(doc); return; }
     const rel = resolveRelPath(fromRel, href);
-    if (rel) onOpenPath(rel);
+    if (rel && OPENABLE_EXT_RE.test(rel)) onOpenPath(rel);
   };
 
-  return <div ref={root} className="md-body" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  // 中鍵（或其他輔助鍵）點連結預設會開新視窗，這裡一律擋掉。
+  const onAuxClick = (e: MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('a[href]')) e.preventDefault();
+  };
+
+  return <div ref={root} className="md-body" onClick={onClick} onAuxClick={onAuxClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }

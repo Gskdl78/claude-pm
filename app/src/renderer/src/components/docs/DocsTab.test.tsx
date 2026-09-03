@@ -125,6 +125,28 @@ describe('DocsTab', () => {
     expect(screen.queryByText('載入中…')).toBeNull();
   });
 
+  it('never renders a doc from the previous project', async () => {
+    const pending = deferred<string>();
+    const { rerender } = tab({ selected: 'docs/product/prd.md' });
+    await screen.findByRole('heading', { level: 1, name: 'PRD' });
+    docs.read.mockImplementationOnce(() => pending.promise);
+    const OTHER = 'C:\\P\\beta';
+    rerender(<DocsTab path={OTHER} stageDocs={[]} selected="docs/product/prd.md" onSelect={() => {}} docsRevision={0} hidden={false} onNotice={() => {}} />);
+    expect(await screen.findByText('載入中…')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'PRD' })).toBeNull();
+    pending.resolve('# 另一個 PRD\n');
+    expect(await screen.findByRole('heading', { level: 1, name: '另一個 PRD' })).toBeInTheDocument();
+    expect(docs.read).toHaveBeenLastCalledWith(OTHER, 'docs/product/prd.md');
+  });
+
+  it('reports a failed openPath as a notice', async () => {
+    const onNotice = vi.fn();
+    openPath.mockResolvedValueOnce('No application');
+    tab({ selected: 'docs/product/prd.md', onNotice });
+    fireEvent.click(await screen.findByRole('button', { name: '用外部程式開啟' }));
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('無法開啟檔案：No application', 'error'));
+  });
+
   it('drops a stale read that resolves after the selection changed', async () => {
     const stale = deferred<string>();
     docs.read.mockImplementationOnce(() => stale.promise);

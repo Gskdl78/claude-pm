@@ -211,6 +211,16 @@ describe('ipc handlers', () => {
     expect(openExternal).toHaveBeenCalledTimes(2);
   });
 
+  it('shell:openPath refuses executable files but still opens documents', async () => {
+    const { h, root, openPath } = setup();
+    writeFileSync(join(root, 'x.bat'), 'echo hi');
+    writeFileSync(join(root, 'a.md'), '# a');
+    await expect(h['shell:openPath'](join(root, 'x.bat'))).rejects.toThrow(/refusing to open executable file/);
+    expect(openPath).not.toHaveBeenCalled();
+    await h['shell:openPath'](join(root, 'a.md'));
+    expect(openPath).toHaveBeenCalledWith(join(root, 'a.md'));
+  });
+
   it('docs handlers are exposed and guarded', async () => {
     const { h } = setup();
     const created = await h['projects:create']('demo');

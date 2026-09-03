@@ -218,7 +218,10 @@ export default function App() {
     if (!current) return;
     const norm = rel.replace(/\\/g, '/');
     if (isDocRelPath(norm)) { setSelectedDoc(norm); setCenterTab('docs'); return; }
-    void pm.openPath(`${current.path}\\${rel.replace(/\//g, '\\')}`);
+    // shell.openPath 成功回空字串，失敗時把系統的錯誤訊息帶給使用者。
+    void pm.openPath(`${current.path}\\${rel.replace(/\//g, '\\')}`).then((r) => {
+      if (r) pushNotice(`無法開啟檔案：${r}`, 'error');
+    });
   };
 
   // 只在 Claude Code 停在提示符時送，避免打斷正在輸出的回應。

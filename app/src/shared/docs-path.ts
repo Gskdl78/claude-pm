@@ -16,7 +16,10 @@ export function isDocRelPath(rel: unknown): rel is string {
 export function resolveRelPath(fromRel: string, href: string): string | null {
   if (!href) return null;
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#') || href.startsWith('//')) return null;
-  const clean = href.split('#')[0]!.split('?')[0]!;
+  let clean = href.split('#')[0]!.split('?')[0]!;
+  if (!clean) return null;
+  // 連結裡的中文與空白通常是百分號編碼；解不開的（壞編碼）當成無效連結。
+  try { clean = decodeURIComponent(clean); } catch { return null; }
   if (!clean) return null;
   const out = clean.startsWith('/') ? [] : fromRel.split('/').slice(0, -1);
   for (const s of clean.replace(/^\/+/, '').split('/')) {

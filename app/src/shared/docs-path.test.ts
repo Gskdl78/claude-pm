@@ -23,6 +23,16 @@ describe('resolveRelPath', () => {
     expect(resolveRelPath('docs/product/prd.md', './prd.md#sec?x=1')).toBe('docs/product/prd.md');
     expect(resolveRelPath('docs/a.md', '/docs/b.md')).toBe('docs/b.md');
   });
+  it('percent-decodes hrefs', () => {
+    expect(resolveRelPath('docs/a.md', '%E4%B8%AD%E6%96%87.md')).toBe('docs/中文.md');
+    expect(resolveRelPath('docs/a.md', 'my%20doc.md')).toBe('docs/my doc.md');
+    expect(resolveRelPath('docs/product/prd.md', '..%2Ftech%2Ftasks.md')).toBe('docs/tech/tasks.md');
+  });
+  it('returns null for malformed encodings and encoded traversal above the repo', () => {
+    expect(resolveRelPath('docs/a.md', '%E4')).toBeNull();
+    expect(resolveRelPath('docs/a.md', 'a%ZZb.md')).toBeNull();
+    expect(resolveRelPath('docs/a.md', '%2e%2e/%2e%2e/etc/passwd')).toBeNull();
+  });
   it('returns null for external urls, anchors, protocol-relative and escapes above the repo', () => {
     expect(resolveRelPath('docs/a.md', 'https://x.y/z.md')).toBeNull();
     expect(resolveRelPath('docs/a.md', 'mailto:a@b.c')).toBeNull();

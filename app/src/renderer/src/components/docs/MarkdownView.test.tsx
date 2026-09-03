@@ -19,7 +19,7 @@ function view(html: string, over: Partial<{ onNavigate: (r: string) => void; onO
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe('MarkdownView', () => {
-  it('routes link clicks: doc → onNavigate, external → onOpenExternal, other relative → onOpenPath, anchor → nothing', () => {
+  it('routes link clicks: doc → onNavigate, external → onOpenExternal, other relative → onOpenPath, anchor → the browser', () => {
     const onNavigate = vi.fn(); const onOpenExternal = vi.fn(); const onOpenPath = vi.fn();
     view('<p><a href="../tech/tasks.md">t</a> <a href="https://x.y/">e</a> <a href="demo/index.html">d</a> <a href="#top">a</a></p>', { onNavigate, onOpenExternal, onOpenPath });
     fireEvent.click(screen.getByText('t'));
@@ -32,6 +32,25 @@ describe('MarkdownView', () => {
     expect(onNavigate).toHaveBeenCalledTimes(1);
     expect(onOpenExternal).toHaveBeenCalledTimes(1);
     expect(onOpenPath).toHaveBeenCalledTimes(1);
+  });
+
+  it('only hands viewable files to the system, never executables', () => {
+    const onOpenPath = vi.fn();
+    view('<p><a href="../../setup.bat">bat</a> <a href="assets/logo.png">png</a></p>', { onOpenPath });
+    fireEvent.click(screen.getByText('bat'));
+    expect(onOpenPath).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('png'));
+    expect(onOpenPath).toHaveBeenCalledTimes(1);
+    expect(onOpenPath).toHaveBeenCalledWith('docs/product/assets/logo.png');
+  });
+
+  it('cancels middle clicks so a link can never open a window', () => {
+    const onOpenExternal = vi.fn();
+    view('<p><a href="https://x.y/">e</a></p>', { onOpenExternal });
+    const ev = new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true });
+    fireEvent(screen.getByText('e'), ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(onOpenExternal).not.toHaveBeenCalled();
   });
 
   it('renders mermaid blocks into svg and marks failures', async () => {

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import type { DocEntry } from '../shared/types';
 import { isDocRelPath } from '../shared/docs-path';
@@ -49,15 +49,30 @@ export function readDoc(dir: string, rel: string): string {
   return readFileSync(abs, 'utf8');
 }
 
+/** writeDoc 用到的檔案操作；測試可注入以模擬 rename 失敗。 */
+export interface WriteDocFsOps {
+  writeFileSync: typeof writeFileSync;
+  renameSync: typeof renameSync;
+  unlinkSync: typeof unlinkSync;
+}
+
+const DEFAULT_FS_OPS: WriteDocFsOps = { writeFileSync, renameSync, unlinkSync };
+
 /** 只能覆寫既有檔案（不建立新檔）；先寫 .tmp 再 rename，避免寫到一半被讀到。 */
-export function writeDoc(dir: string, rel: string, content: string): void {
+export function writeDoc(dir: string, rel: string, content: string, fsOps: WriteDocFsOps = DEFAULT_FS_OPS): void {
   const abs = resolveDoc(dir, rel);
   if (typeof content !== 'string') throw new Error('invalid content');
   if (Buffer.byteLength(content, 'utf8') > MAX_DOC_BYTES) throw new Error('doc too large');
   if (!existsSync(abs) || !statSync(abs).isFile()) throw new Error('doc not found');
   const tmp = `${abs}.tmp`;
-  writeFileSync(tmp, content, 'utf8');
-  renameSync(tmp, abs);
+  fsOps.writeFileSync(tmp, content, 'utf8');
+  try {
+    fsOps.renameSync(tmp, abs);
+  } catch (e) {
+    // rename 失敗（檔案被鎖住等）時別留下孤兒 .tmp，它會被 listDocs 忽略但仍佔著磁碟。
+    try { fsOps.unlinkSync(tmp); } catch { /* 已經不存在就算了 */ }
+    throw e;
+  }
 }
 
 /** watcher 用：所有 md 的 rel:mtime:size 串接，任何新增 / 刪除 / 修改都會改變。 */

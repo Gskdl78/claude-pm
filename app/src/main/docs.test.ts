@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listDocs, readDoc, writeDoc, docsSignature, MAX_DOC_BYTES } from './docs';
@@ -39,6 +39,14 @@ describe('readDoc / writeDoc', () => {
     writeDoc(dir, 'docs/verify/checklist.md', '- [x] a\r\n- [x] b\r\n');
     expect(readFileSync(join(dir, 'docs', 'verify', 'checklist.md'), 'utf8')).toBe('- [x] a\r\n- [x] b\r\n');
     expect(readdirSync(join(dir, 'docs', 'verify'))).toEqual(['checklist.md']);
+  });
+  it('removes the tmp file and keeps the original when the rename fails', () => {
+    const dir = project();
+    const fail = () => { throw new Error('EPERM'); };
+    expect(() => writeDoc(dir, 'docs/product/prd.md', '# PRD v2\n', { writeFileSync, renameSync: fail, unlinkSync }))
+      .toThrow(/EPERM/);
+    expect(readdirSync(join(dir, 'docs', 'product'))).toEqual(['demo', 'prd.md']);
+    expect(readFileSync(join(dir, 'docs', 'product', 'prd.md'), 'utf8')).toBe('# PRD\n');
   });
   it('rejects paths outside docs, non-markdown, traversal and missing files', () => {
     const dir = project();

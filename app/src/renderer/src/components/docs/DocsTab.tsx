@@ -22,8 +22,9 @@ interface Props {
 
 const EMPTY: DocEntry[] = [];
 
-/** 已讀進來的文件；rel 一併記著，才能確認內容屬於目前選取的檔案。 */
+/** 已讀進來的文件；專案路徑與 rel 一併記著，才能確認內容屬於目前選取的檔案。 */
 interface LoadedDoc {
+  path: string;
   rel: string;
   text: string;
 }
@@ -43,6 +44,7 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
   const seqRef = useRef(0);
   const pendingRef = useRef(true);
   const selectedRef = useRef(selected);
+  const pathRef = useRef(path);
 
   // 專案、選檔或 docs 變更都需要重新列表並讀取；隱藏時先記著，切回來再做。
   useEffect(() => { pendingRef.current = true; }, [path, selected, docsRevision]);
@@ -50,6 +52,7 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
   // 用 seq 丟掉過期的回應：只有最後一次請求可以寫進狀態。
   useEffect(() => {
     selectedRef.current = selected;
+    pathRef.current = path;
     // 隱藏時不列表也不讀檔；沒有待處理的更新時（例如只是切回分頁）也不必重做。
     if (hidden || !pendingRef.current) return;
     pendingRef.current = false;
@@ -65,7 +68,7 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
         if (!list.some((e) => e.rel === selected)) { setDoc(null); setError('檔案已不存在'); return; }
         const text = await pm.docs.read(path, selected);
         if (seq !== seqRef.current) return;
-        setDoc({ rel: selected, text }); setError(null);
+        setDoc({ path, rel: selected, text }); setError(null);
       } catch (e) {
         if (seq !== seqRef.current) return;
         setDoc(null); setError(friendly(e));
@@ -73,14 +76,14 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
     })();
   }, [path, selected, docsRevision, hidden]);
 
-  // 只有內容確實屬於目前選取的檔案時才顯示，否則會把上一份文件掛在新檔名底下。
-  const shown = doc !== null && doc.rel === selected ? doc : null;
+  // 只有內容確實屬於目前專案與選取的檔案時才顯示，否則會把上一份文件掛在新檔名底下。
+  const shown = doc !== null && doc.path === path && doc.rel === selected ? doc : null;
   const isChecklist = selected === CHECKLIST_REL;
   const html = useMemo(() => (shown && !isChecklist ? renderMarkdown(shown.text) : ''), [shown, isChecklist]);
 
   const toggle = async (line: number) => {
     if (!path || busy) return;
-    if (!doc || doc.rel !== selected || selected !== CHECKLIST_REL) return;
+    if (!doc || doc.path !== path || doc.rel !== selected || selected !== CHECKLIST_REL) return;
     const rel = selected;
     let next: string;
     try { next = toggleChecklistLine(doc.text, line); } catch (e) { onNotice(`驗證清單寫入失敗：${errorMessage(e)}`, 'error'); return; }
@@ -92,8 +95,10 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
         onNotice(`驗證清單寫入失敗：${errorMessage(e)}`, 'error');
         return;
       }
-      // 寫檔期間選取可能已經換掉，那份內容就不屬於畫面上的檔案了。
-      setDoc((cur) => (selectedRef.current === rel && cur !== null && cur.rel === rel ? { rel, text: next } : cur));
+      // 寫檔期間專案或選取可能已經換掉，那份內容就不屬於畫面上的檔案了。
+      setDoc((cur) => (pathRef.current === path && selectedRef.current === rel && cur !== null && cur.path === path && cur.rel === rel
+        ? { path, rel, text: next }
+        : cur));
       setError(null);
       try {
         const r = await pm.git.run(path, { kind: 'commitPaths', message: CHECKLIST_COMMIT_MESSAGE, paths: [rel] });
@@ -107,8 +112,16 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
     }
   };
 
+  // shell.openPath 成功時回空字串，失敗時回錯誤訊息（例如找不到可以開啟的程式）。
+  const openWith = (rel: string) => {
+    if (!path) return;
+    void pm.openPath(`${path}\\${rel.replace(/\//g, '\\')}`).then((r) => {
+      if (r) onNotice(`無法開啟檔案：${r}`, 'error');
+    });
+  };
+
   const openExternally = () => {
-    if (path && selected) void pm.openPath(`${path}\\${selected.replace(/\//g, '\\')}`);
+    if (selected) openWith(selected);
   };
 
   return (
@@ -132,7 +145,7 @@ export function DocsTab({ path, stageDocs, selected, onSelect, docsRevision, hid
               : <MarkdownView html={html} fromRel={shown.rel}
                   onNavigate={onSelect}
                   onOpenExternal={(u) => { void pm.openExternal(u); }}
-                  onOpenPath={(rel) => { if (path) void pm.openPath(`${path}\\${rel.replace(/\//g, '\\')}`); }} />
+                  onOpenPath={openWith} />
             )}
           </div>
         </>
