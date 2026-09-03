@@ -32,4 +32,13 @@ describe('InsightGroupRow', () => {
     expect(onRevealCommit).toHaveBeenCalledWith('C:\\P\\a', 'abc1234');
     expect(screen.getByRole('button', { name: '無 commit' })).toBeDisabled();
   });
+
+  it('disables pinning when the group has no fix', () => {
+    const onPin = vi.fn();
+    render(<InsightGroupRow group={{ ...group, fixes: [] }} expanded={false} pinned={false} busy={false}
+      onToggle={() => {}} onPin={onPin} onRevealCommit={() => {}} />);
+    const btn = screen.getByRole('button', { name: '釘選為注意事項' });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('title', '沒有修法可釘選');
+  });
 });

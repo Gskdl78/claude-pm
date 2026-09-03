@@ -156,6 +156,18 @@ describe('scaffoldProject', () => {
     expect(readClaude(c)).toContain('## 固定注意事項\n（無）\n');
   });
 
+  it('writes CLAUDE.md with a single line-ending style', () => {
+    const root = makeTempDir();
+    const pinned = join(root, 'pinned-notes.md');
+    // 釘選檔一律是 LF；範本在 Windows 上可能是 CRLF，代入後不可混用。
+    writeFileSync(pinned, '- Env 缺少 .env → 建議：加 .env.example\n- Timeout → 建議：加重試\n');
+    const target = join(root, 'eol');
+    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false, vars: { pinnedFile: pinned } });
+    const out = readFileSync(join(target, 'CLAUDE.md'), 'utf8');
+    expect(out).toContain('加重試');
+    expect(/\r\n/.test(out) && /(?<!\r)\n/.test(out)).toBe(false);
+  });
+
   it('cli accepts model flags', () => {
     const root = makeTempDir();
     const target = join(root, 'cli');
@@ -173,6 +185,7 @@ describe('parseVars', () => {
     expect(vars).toEqual({ implModel: 'sonnet', reviewModel: 'fable', maxRetries: 7 });
     expect(rest).toEqual(['C:\\x\\demo', 'demo', '--no-git']);
     expect(parseVars(['--pinned-file=C:\\x\\p.md']).vars).toEqual({ pinnedFile: 'C:\\x\\p.md' });
+    expect(parseVars(['--pinned-file=']).vars).toEqual({});
   });
   it('rejects bad values', () => {
     expect(() => parseVars(['--max-retries=0'])).toThrow(/max-retries/);

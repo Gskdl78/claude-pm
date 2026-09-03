@@ -296,12 +296,21 @@ describe('ipc handlers', () => {
     const after = await h['insights:pin']({ cause: 'Env 缺少 .env', fix: '加 .env.example' });
     expect(after).toEqual([{ cause: 'Env 缺少 .env', fix: '加 .env.example' }]);
     expect(readFileSync(join(base, 'pinned-notes.md'), 'utf8')).toBe('- Env 缺少 .env → 建議：加 .env.example\n');
-    await expect(h['insights:pin']({ cause: '', fix: 'x' })).rejects.toThrow(/invalid note/);
+    await expect(h['insights:pin']({ cause: '', fix: 'x' })).rejects.toThrow(/須為單行/);
     const created = await h['projects:create']('pinned');
     // 範本在 Windows 上可能以 CRLF 簽出，斷言跨行內容前先正規化換行。
     expect(readFileSync(join(created.path, 'CLAUDE.md'), 'utf8').replace(/\r\n/g, '\n'))
       .toContain('## 固定注意事項\n- Env 缺少 .env → 建議：加 .env.example');
     expect(await h['insights:unpin']('env 缺少 .env')).toEqual([]);
     await expect(h['insights:unpin'](5 as unknown as string)).rejects.toThrow(/invalid cause/);
+  });
+
+  it('projects:init also carries the pinned notes into CLAUDE.md', async () => {
+    const { h, root } = setup();
+    await h['insights:pin']({ cause: 'Timeout', fix: '加重試' });
+    const dir = join(root, 'legacy'); mkdirSync(dir);
+    await h['projects:init'](dir);
+    expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').replace(/\r\n/g, '\n'))
+      .toContain('## 固定注意事項\n- Timeout → 建議：加重試');
   });
 });

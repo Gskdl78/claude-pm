@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertNote, collectInsights, formatPinned, parsePinned, pinNote, readPinned, unpinNote, writePinned } from './insights';
 
-function state(name: string, issues: unknown[]) {
+function state(name: string, issues: unknown) {
   return JSON.stringify({
     version: 1, name, type: 'web', stage: 'build',
     stages: { env: { status: 'done' }, design: { status: 'done' }, tech: { status: 'done' }, build: { status: 'in_progress' }, verify: { status: 'pending' } },
@@ -31,12 +31,33 @@ describe('collectInsights', () => {
   it('returns an empty report for a missing root', () => {
     expect(collectInsights(join(tmpdir(), 'nope-' + Date.now()))).toEqual({ items: [], projects: 0, skipped: [] });
   });
+  it('skips a project whose issues is not an array', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pm-ins-'));
+    mkdirSync(join(root, 'a', '.pm'), { recursive: true });
+    mkdirSync(join(root, 'obj', '.pm'), { recursive: true });
+    writeFileSync(join(root, 'a', '.pm', 'state.json'), state('a', [{ id: 1, stage: 'build', task: null, symptom: 's1', cause: 'c1', fix: 'f1', commit: '', at: '' }]));
+    writeFileSync(join(root, 'obj', '.pm', 'state.json'), state('obj', {}));
+    const r = collectInsights(root);
+    expect(r.skipped).toEqual(['obj']);
+    expect(r.projects).toBe(1);
+    expect(r.items.map((i) => i.cause)).toEqual(['c1']);
+  });
+  it('skips non-object entries but keeps the valid ones', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pm-ins-'));
+    mkdirSync(join(root, 'a', '.pm'), { recursive: true });
+    writeFileSync(join(root, 'a', '.pm', 'state.json'), state('a', [null, { id: 2, stage: 'build', task: null, symptom: 's2', cause: 'c2', fix: 'f2', commit: '', at: '' }]));
+    const r = collectInsights(root);
+    expect(r.skipped).toEqual([]);
+    expect(r.projects).toBe(1);
+    expect(r.items.map((i) => [i.id, i.cause])).toEqual([[2, 'c2']]);
+  });
 });
 
 describe('pinned notes', () => {
   it('parses and formats bullet lines, ignoring others', () => {
     const text = '# 固定注意事項\n- Env 缺少 .env → 建議：加 .env.example\n\n- Timeout → 建議：加重試；拉長逾時\nnot a bullet\n';
     expect(parsePinned(text)).toEqual([{ cause: 'Env 缺少 .env', fix: '加 .env.example' }, { cause: 'Timeout', fix: '加重試；拉長逾時' }]);
+    expect(parsePinned(text.replace(/\n/g, '\r\n'))).toEqual(parsePinned(text));
     expect(formatPinned(parsePinned(text))).toBe('- Env 缺少 .env → 建議：加 .env.example\n- Timeout → 建議：加重試；拉長逾時\n');
     expect(formatPinned([])).toBe('');
   });
@@ -56,12 +77,18 @@ describe('pinned notes', () => {
     expect(readFileSync(file, 'utf8')).toBe('- a → 建議：b\n');
     expect(readPinned(file)).toEqual([{ cause: 'a', fix: 'b' }]);
   });
+  it('rethrows read errors other than ENOENT', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pm-pin-'));
+    // 釘選路徑上是一個資料夾：不能被當成「沒有釘選」而靜靜回傳 []。
+    expect(() => readPinned(dir)).toThrow();
+  });
   it('assertNote validates shape, length and single line', () => {
     expect(assertNote({ cause: ' a ', fix: ' b ', extra: 1 })).toEqual({ cause: 'a', fix: 'b' });
-    expect(() => assertNote(null)).toThrow(/invalid note/);
-    expect(() => assertNote({ cause: '', fix: 'b' })).toThrow(/invalid note/);
-    expect(() => assertNote({ cause: 'a\nb', fix: 'b' })).toThrow(/invalid note/);
-    expect(() => assertNote({ cause: 'a', fix: 'x'.repeat(501) })).toThrow(/invalid note/);
-    expect(() => assertNote({ cause: 'a → 建議：x', fix: 'b' })).toThrow(/invalid note/);
+    expect(() => assertNote(null)).toThrow(/須為單行/);
+    expect(() => assertNote({ cause: 'a' })).toThrow(/須為單行/);
+    expect(() => assertNote({ cause: '', fix: 'b' })).toThrow(/須為單行/);
+    expect(() => assertNote({ cause: 'a\nb', fix: 'b' })).toThrow(/須為單行/);
+    expect(() => assertNote({ cause: 'a', fix: 'x'.repeat(501) })).toThrow(/須為單行/);
+    expect(() => assertNote({ cause: 'a → 建議：x', fix: 'b' })).toThrow(/須為單行/);
   });
 });

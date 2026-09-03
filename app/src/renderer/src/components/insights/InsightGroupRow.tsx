@@ -19,6 +19,8 @@ function when(at: string): string {
 
 export function InsightGroupRow({ group, expanded, pinned, busy, onToggle, onPin, onRevealCommit }: Props) {
   const fixes = group.fixes.slice(0, MAX_FIXES);
+  // 沒有任何修法時釘選一定會被 assertNote 擋下，直接停用按鈕。
+  const noFix = group.fixes.length === 0;
   return (
     <div className="insight-group">
       <div className="insight-head">
@@ -26,7 +28,7 @@ export function InsightGroupRow({ group, expanded, pinned, busy, onToggle, onPin
         <span className="insight-cause">{group.cause}</span>
         <span className="count">{group.count} 次</span>
         <span className="insight-projects">{group.projects.map((p) => <span key={p} className="pill">{p}</span>)}</span>
-        <button disabled={pinned || busy} onClick={onPin}>{pinned ? '已釘選' : '釘選為注意事項'}</button>
+        <button disabled={pinned || busy || noFix} title={noFix ? '沒有修法可釘選' : undefined} onClick={onPin}>{pinned ? '已釘選' : '釘選為注意事項'}</button>
       </div>
       {fixes.length > 0 && (
         <div className="insight-fixes muted">
@@ -35,8 +37,8 @@ export function InsightGroupRow({ group, expanded, pinned, busy, onToggle, onPin
       )}
       {expanded && (
         <div className="insight-items">
-          {group.items.map((i) => (
-            <div key={`${i.path}:${i.id}`} className="insight-item">
+          {group.items.map((i, idx) => (
+            <div key={`${i.path}:${i.id}:${idx}`} className="insight-item">
               <span className="pill">{i.project}</span>
               <span className="muted">{STAGE_LABELS[i.stage] ?? i.stage}{i.task ? ` · ${i.task}` : ''}{i.at ? ` · ${when(i.at)}` : ''}</span>
               <span className="insight-symptom">{i.symptom}</span>

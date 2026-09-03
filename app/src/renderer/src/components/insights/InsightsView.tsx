@@ -13,6 +13,7 @@ interface Props {
 }
 
 const EMPTY: InsightsReport = { items: [], projects: 0, skipped: [] };
+const MAX_FIX_LEN = 500;
 const norm = (s: string) => s.trim().toLowerCase();
 
 export function InsightsView({ hidden, revision, onRevealCommit }: Props) {
@@ -25,7 +26,6 @@ export function InsightsView({ hidden, revision, onRevealCommit }: Props) {
   const [pinError, setPinError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const seqRef = useRef(0);
-  const pendingRef = useRef(true);
 
   const load = useCallback(async () => {
     seqRef.current += 1;
@@ -43,11 +43,9 @@ export function InsightsView({ hidden, revision, onRevealCommit }: Props) {
     }
   }, []);
 
-  // 隱藏時只記下「需要重讀」，顯示時才真的發 IPC
-  useEffect(() => { pendingRef.current = true; }, [revision]);
+  // 隱藏時不發 IPC；每次由隱藏轉為顯示、以及顯示中 revision 變動都重讀一次。
   useEffect(() => {
-    if (hidden || !pendingRef.current) return;
-    pendingRef.current = false;
+    if (hidden) return;
     void load();
   }, [hidden, revision, load]);
 
@@ -62,7 +60,9 @@ export function InsightsView({ hidden, revision, onRevealCommit }: Props) {
 
   const pin = async (cause: string, fixes: string[]) => {
     setBusy(true); setPinError(null);
-    try { setPinned(await pm.insights.pin({ cause, fix: fixes.join('；') })); }
+    // 主行程限定修法 1–500 字，這裡先截斷；完全沒有修法時填「（無）」避免空字串被擋。
+    const fix = fixes.join('；').slice(0, MAX_FIX_LEN) || '（無）';
+    try { setPinned(await pm.insights.pin({ cause, fix })); }
     catch (e) { setPinError(errorMessage(e)); }
     finally { setBusy(false); }
   };
@@ -104,8 +104,8 @@ export function InsightsView({ hidden, revision, onRevealCommit }: Props) {
         <div className="muted">之後「+ 新專案」或「初始化」產生的 CLAUDE.md 會帶入這些條目。</div>
         {pinError && <div className="error">{pinError}</div>}
         {pinned.length === 0 && <div className="muted">尚無固定注意事項</div>}
-        {pinned.map((n) => (
-          <div key={n.cause} className="pinned-note">
+        {pinned.map((n, idx) => (
+          <div key={`${n.cause}:${idx}`} className="pinned-note">
             <span>{n.cause} → 建議：{n.fix}</span>
             <button className="ghost" disabled={busy} onClick={() => { void unpin(n.cause); }}>移除</button>
           </div>

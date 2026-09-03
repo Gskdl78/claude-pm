@@ -85,9 +85,12 @@ export function scaffoldProject({ targetDir, name = basename(targetDir), pluginD
     const tpl = readFileSync(join(pluginDir, 'templates', 'CLAUDE.md'), 'utf8');
     const { pinnedFile, ...rest } = vars;
     const pinned = readPinnedFile(pinnedFile);
-    writeFileSync(claudeMd, renderTemplate(tpl, {
+    const rendered = renderTemplate(tpl, {
       name, type: 'other', notes: '（尚無歷史注意事項）', ...DEFAULT_VARS, ...rest, ...(pinned ? { pinned } : {}),
-    }));
+    });
+    // 代入的注意事項可能是 LF，而範本在 Windows 上常以 CRLF 簽出：統一成範本的換行，避免混用。
+    const eol = tpl.includes('\r\n') ? '\r\n' : '\n';
+    writeFileSync(claudeMd, rendered.replace(/\r?\n/g, eol));
   }
   const gitignore = join(targetDir, '.gitignore');
   if (!existsSync(gitignore)) cpSync(join(pluginDir, 'templates', 'gitignore'), gitignore);

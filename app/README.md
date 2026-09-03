@@ -114,7 +114,7 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 ## 洞察（跨專案 issue）
 
 - 側欄底部「📊 洞察」或中間分頁「洞察」：列出根目錄下所有專案的 issue，依根因分組（規則與 `/stage-env` 寫入注意事項時相同），顯示次數、來源專案與修法；可依階段（產品實現 / 人工驗證）與時間（7 / 30 天）篩選。
-- 展開群組可看到每筆 issue；「查看 commit」會切換到該專案並在右欄「歷史」分頁開啟該 commit。
+- 展開群組可看到每筆 issue；「查看 commit」會切換到該專案並在右欄「歷史」分頁開啟該 commit。注意：切換專案會重啟該專案的 Claude Code session（在多 session 支援完成前，同時只能開一個），所以終端機正在跑東西時先別點。
 - 「釘選為注意事項」把 `- <根因> → 建議：<修法>` 寫進 `%USERPROFILE%\.claude-pm\pinned-notes.md`；之後「+ 新專案」/「初始化」產生的 CLAUDE.md 會在「固定注意事項」節帶入（`/stage-env` 不會改動這一節）。在洞察頁可移除釘選。
 - state 損毀的專案會列在「略過」，不影響其他專案。
 
