@@ -93,7 +93,8 @@ export class SessionManager extends EventEmitter {
     const [file, args] = process.platform === 'win32'
       ? ['cmd.exe', ['/c', opts.command, ...opts.args]]
       : [opts.command, opts.args];
-    const env = { ...sanitizeEnv(process.env), TERM: 'xterm-256color', COLORTERM: 'truecolor' };
+    // CLAUDE_PM_APP：告訴終端機裡的工具（例如獨立 git-panel 的 SessionStart hook）這是 claude-pm 內建終端機
+    const env = { ...sanitizeEnv(process.env), TERM: 'xterm-256color', COLORTERM: 'truecolor', CLAUDE_PM_APP: '1' };
     const proc = this.spawn(file, args, { cwd: path, cols: opts.cols, rows: opts.rows, env });
     const idle = this.idleFactory();
     const s: Session = { proc, idle, label: basename(path) };

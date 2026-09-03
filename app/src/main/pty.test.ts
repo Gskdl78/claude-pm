@@ -131,4 +131,17 @@ describe('sanitizeEnv', () => {
     });
     expect(Object.keys(out).sort()).toEqual(['ANTHROPIC_API_KEY', 'CLAUDE_CONFIG_DIR', 'PATH']);
   });
+  it('spawn env marks the claude-pm terminal and drops Claude Code markers', () => {
+    const seen: NodeJS.ProcessEnv[] = [];
+    const spawn: SpawnFn = (_f, _a, opts) => { seen.push(opts.env); return { onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }; };
+    process.env.CLAUDE_CODE_CHILD_SESSION = '1';
+    try {
+      new SessionManager(spawn).start('C:\P\x', { command: 'claude', args: [], cols: 80, rows: 24 });
+    } finally {
+      delete process.env.CLAUDE_CODE_CHILD_SESSION;
+    }
+    expect(seen[0]!.CLAUDE_PM_APP).toBe('1');
+    expect(seen[0]!.TERM).toBe('xterm-256color');
+    expect(seen[0]!.CLAUDE_CODE_CHILD_SESSION).toBeUndefined();
+  });
 });
