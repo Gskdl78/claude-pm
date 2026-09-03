@@ -67,6 +67,9 @@ export interface PtyStartOptions {
   rows: number;
 }
 
+/** docs/**\/*.md 的一筆；rel 為 repo 相對路徑（正斜線） */
+export interface DocEntry { rel: string; size: number; mtimeMs: number }
+
 /** App 要寫進右欄輸出區的一行提示（例如階段切換、清單提交結果）；id 遞增、只增不減 */
 export interface Notice { id: number; text: string; kind?: 'hint' | 'error' }
 
