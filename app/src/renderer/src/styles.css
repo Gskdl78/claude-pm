@@ -183,3 +183,26 @@ button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
 .diff-body .dl.del { color: var(--danger); background: rgba(241, 76, 76, .08); }
 .diff-body .dl.hunk { color: #569cd6; }
 .diff-body .dl.meta { color: var(--muted); }
+
+/* ---- git panel batch 2：中止合併、推送被拒、歷史動作、進階分頁、發佈精靈 ---- */
+.git-conflict { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.git-conflict button { padding: 2px 8px; font-size: 12px; border-color: var(--danger); }
+.git-rejected { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: rgba(220, 220, 170, .12); color: var(--warn); padding: 6px 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.git-rejected button { padding: 2px 8px; font-size: 12px; }
+.history-actions { display: flex; gap: 6px; margin-top: 4px; }
+.history-actions button { padding: 0 4px; font-size: 11px; }
+.advanced-tab { display: flex; flex-direction: column; gap: 14px; }
+.advanced-tab section { display: flex; flex-direction: column; gap: 4px; }
+.advanced-tab h4 { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.advanced-tab .row { display: flex; gap: 6px; }
+.advanced-tab .row input { flex: 1; min-width: 0; }
+.advanced-tab .modes label { display: block; font-size: 12px; }
+.ref-row { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 0; }
+.ref-row .ref-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ref-row code, .advanced-tab code { font-family: Consolas, monospace; color: var(--accent); flex: none; }
+.wizard { max-width: 520px; }
+.wizard-step { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+.wizard-title { font-weight: 600; font-size: 12px; }
+.wizard-step label { font-size: 12px; }
+.wizard-fields { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; }
+.wizard-fields input:not([type='radio']) { width: 100%; }
