@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 把 pm-workflow 種入一個專案資料夾。
-// 用法：node scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=]
+// 用法：node scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=] [--pinned-file=]
 import {
   cpSync, existsSync, mkdirSync, readFileSync, writeFileSync,
 } from 'node:fs';
@@ -21,17 +21,19 @@ export function validateName(name) {
 }
 
 export const MODEL_NAME_RE = /^[a-z0-9.-]{1,32}$/;
-export const DEFAULT_VARS = { implModel: 'opus', reviewModel: 'fable', maxRetries: 3 };
+export const DEFAULT_VARS = { implModel: 'opus', reviewModel: 'fable', maxRetries: 3, pinned: '（無）' };
 
-/** 從 argv 取出 --impl-model= --review-model= --max-retries=，其餘原樣回傳。 */
+/** 從 argv 取出 --impl-model= --review-model= --max-retries= --pinned-file=，其餘原樣回傳。 */
 export function parseVars(args) {
   const vars = {};
   const rest = [];
   for (const a of args) {
-    const m = /^--(impl-model|review-model|max-retries)=(.*)$/.exec(a);
+    const m = /^--(impl-model|review-model|max-retries|pinned-file)=(.*)$/.exec(a);
     if (!m) { rest.push(a); continue; }
     const [, key, value] = m;
-    if (key === 'max-retries') {
+    if (key === 'pinned-file') {
+      if (value) vars.pinnedFile = value;
+    } else if (key === 'max-retries') {
       const n = Number(value);
       if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error(`invalid --max-retries: "${value}"（1–10 的整數）`);
       vars.maxRetries = n;
@@ -41,6 +43,17 @@ export function parseVars(args) {
     }
   }
   return { vars, rest };
+}
+
+/** 釘選注意事項檔：不存在或空白回 null（用預設「（無）」）。 */
+function readPinnedFile(file) {
+  if (!file || !existsSync(file)) return null;
+  try {
+    const text = readFileSync(file, 'utf8').trim();
+    return text ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 export function isInitialized(dir) {
@@ -70,7 +83,11 @@ export function scaffoldProject({ targetDir, name = basename(targetDir), pluginD
   const claudeMd = join(targetDir, 'CLAUDE.md');
   if (!existsSync(claudeMd)) {
     const tpl = readFileSync(join(pluginDir, 'templates', 'CLAUDE.md'), 'utf8');
-    writeFileSync(claudeMd, renderTemplate(tpl, { name, type: 'other', notes: '（尚無歷史注意事項）', ...DEFAULT_VARS, ...vars }));
+    const { pinnedFile, ...rest } = vars;
+    const pinned = readPinnedFile(pinnedFile);
+    writeFileSync(claudeMd, renderTemplate(tpl, {
+      name, type: 'other', notes: '（尚無歷史注意事項）', ...DEFAULT_VARS, ...rest, ...(pinned ? { pinned } : {}),
+    }));
   }
   const gitignore = join(targetDir, '.gitignore');
   if (!existsSync(gitignore)) cpSync(join(pluginDir, 'templates', 'gitignore'), gitignore);
@@ -92,7 +109,7 @@ if (isMain) {
     const { vars, rest } = parseVars(process.argv.slice(2));
     const useGit = !rest.includes('--no-git');
     const positional = rest.filter((a) => !a.startsWith('--'));
-    if (!positional[0]) throw new Error('usage: scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=]');
+    if (!positional[0]) throw new Error('usage: scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=] [--pinned-file=]');
     const targetDir = resolve(positional[0]);
     const result = scaffoldProject({ targetDir, name: positional[1] ?? basename(targetDir), git: useGit, vars });
     process.stdout.write(JSON.stringify(result) + '\n');

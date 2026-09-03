@@ -137,6 +137,25 @@ describe('scaffoldProject', () => {
     expect(claude).toContain('審核退回上限 5 次；第 5 次仍不過');
   });
 
+  it('renders pinned notes from --pinned-file and （無） without it', () => {
+    // 範本在 Windows 上可能以 CRLF 簽出，斷言跨行內容前先正規化換行。
+    const readClaude = (dir) => readFileSync(join(dir, 'CLAUDE.md'), 'utf8').replace(/\r\n/g, '\n');
+    const root = makeTempDir();
+    const pinned = join(root, 'pinned-notes.md');
+    writeFileSync(pinned, '- Env 缺少 .env → 建議：加 .env.example\n');
+    const a = join(root, 'with');
+    scaffoldProject({ targetDir: a, pluginDir: PLUGIN_DIR, git: false, vars: { pinnedFile: pinned } });
+    const claudeA = readClaude(a);
+    expect(claudeA).toContain('## 固定注意事項\n- Env 缺少 .env → 建議：加 .env.example\n');
+    expect(claudeA).toContain('## 注意事項（來自歷史專案）\n（尚無歷史注意事項）');
+    const b = join(root, 'without');
+    scaffoldProject({ targetDir: b, pluginDir: PLUGIN_DIR, git: false });
+    expect(readClaude(b)).toContain('## 固定注意事項\n（無）\n');
+    const c = join(root, 'missing');
+    scaffoldProject({ targetDir: c, pluginDir: PLUGIN_DIR, git: false, vars: { pinnedFile: join(root, 'nope.md') } });
+    expect(readClaude(c)).toContain('## 固定注意事項\n（無）\n');
+  });
+
   it('cli accepts model flags', () => {
     const root = makeTempDir();
     const target = join(root, 'cli');
@@ -153,6 +172,7 @@ describe('parseVars', () => {
     const { vars, rest } = parseVars(['C:\\x\\demo', '--impl-model=sonnet', 'demo', '--review-model=fable', '--max-retries=7', '--no-git']);
     expect(vars).toEqual({ implModel: 'sonnet', reviewModel: 'fable', maxRetries: 7 });
     expect(rest).toEqual(['C:\\x\\demo', 'demo', '--no-git']);
+    expect(parseVars(['--pinned-file=C:\\x\\p.md']).vars).toEqual({ pinnedFile: 'C:\\x\\p.md' });
   });
   it('rejects bad values', () => {
     expect(() => parseVars(['--max-retries=0'])).toThrow(/max-retries/);
