@@ -3,6 +3,8 @@ import { STAGE_LABELS, type ProjectInfo } from '../../../shared/types';
 interface Props {
   projects: ProjectInfo[];
   currentPath: string | null;
+  /** Claude Code 正在等這個專案的使用者輸入（只有目前專案會有 pty） */
+  waitingPath?: string | null;
   onSelect: (p: ProjectInfo) => void;
   onInit: (p: ProjectInfo) => void;
   onNew: () => void;
@@ -18,7 +20,7 @@ function stagePill(p: ProjectInfo) {
   return <span className={`pill ${s.stages[s.stage].status}`}>{`● ${STAGE_LABELS[s.stage]}`}</span>;
 }
 
-export function ProjectList({ projects, currentPath, onSelect, onInit, onNew }: Props) {
+export function ProjectList({ projects, currentPath, waitingPath = null, onSelect, onInit, onNew }: Props) {
   return (
     <div className="projects">
       <button className="new-project" onClick={onNew}>+ 新專案</button>
@@ -38,6 +40,7 @@ export function ProjectList({ projects, currentPath, onSelect, onInit, onNew }: 
                 <button className="ghost" onClick={(e) => { e.stopPropagation(); onInit(p); }}>初始化</button>
               </>
             )}
+            {p.path === waitingPath && <span className="pill waiting">● 等待回覆</span>}
           </span>
         </div>
       ))}

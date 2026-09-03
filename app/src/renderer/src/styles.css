@@ -70,6 +70,7 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 .pill.in_progress { border-color: rgba(220, 220, 170, .4); color: var(--warn); }
 .pill.blocked { border-color: rgba(241, 76, 76, .45); color: var(--danger); }
 .pill.pending { border-color: var(--border); color: var(--muted); }
+.pill.waiting { border-color: rgba(220, 220, 170, .5); color: var(--warn); }
 
 /* --- stage panel ---------------------------------------------------------- */
 .stage-body { display: flex; flex-direction: column; gap: 8px; }
