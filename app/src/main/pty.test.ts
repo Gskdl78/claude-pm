@@ -136,7 +136,7 @@ describe('sanitizeEnv', () => {
     const spawn: SpawnFn = (_f, _a, opts) => { seen.push(opts.env); return { onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }; };
     process.env.CLAUDE_CODE_CHILD_SESSION = '1';
     try {
-      new SessionManager(spawn).start('C:\P\x', { command: 'claude', args: [], cols: 80, rows: 24 });
+      new SessionManager(spawn).start(A, { command: 'claude', args: [], cols: 80, rows: 24 });
     } finally {
       delete process.env.CLAUDE_CODE_CHILD_SESSION;
     }
