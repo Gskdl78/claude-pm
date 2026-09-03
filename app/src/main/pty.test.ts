@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { PtyManager, buildClaudeArgs, findClaude, type PtyLike, type SpawnFn } from './pty';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { SessionManager, MAX_SESSIONS, buildClaudeArgs, findClaude, type PtyLike, type SpawnFn } from './pty';
 
 function fakeSpawn() {
   const calls: Array<{ file: string; args: string[]; opts: { cwd: string; cols: number; rows: number } }> = [];
@@ -32,95 +32,85 @@ describe('buildClaudeArgs', () => {
   });
 });
 
-describe('PtyManager', () => {
-  it('spawns through cmd.exe on win32 and forwards data/exit', () => {
-    const f = fakeSpawn();
-    const m = new PtyManager(f.spawn);
-    const data = vi.fn(); const exit = vi.fn();
-    m.on('data', data); m.on('exit', exit);
-    m.start({ cwd: 'C:\\Projects\\x', command: 'claude', args: ['--continue'], cols: 100, rows: 40 });
-    expect(m.isRunning()).toBe(true);
-    const call = f.calls[0];
-    if (process.platform === 'win32') {
-      expect(call.file).toBe('cmd.exe');
-      expect(call.args).toEqual(['/c', 'claude', '--continue']);
-    } else {
-      expect(call.file).toBe('claude');
-      expect(call.args).toEqual(['--continue']);
-    }
-    expect(call.opts).toEqual({ cwd: 'C:\\Projects\\x', cols: 100, rows: 40 });
-    f.procs[0].emitData('hello');
-    expect(data).toHaveBeenCalledWith('hello');
-    m.write('x'); m.resize(80, 24);
-    expect(f.procs[0].written).toEqual(['x']);
-    expect(f.procs[0].size).toEqual([80, 24]);
-    f.procs[0].emitExit(3);
-    expect(exit).toHaveBeenCalledWith(3);
-    expect(m.isRunning()).toBe(false);
+beforeEach(() => { vi.useFakeTimers(); });
+afterEach(() => { vi.useRealTimers(); });
+
+const A = 'C:\\P\\a';
+const B = 'C:\\P\\b';
+const opts = { command: 'claude', args: [], cols: 80, rows: 24 };
+
+describe('SessionManager', () => {
+  it('spawns one process per path with the path as cwd and routes data/exit by path', () => {
+    const { spawn, calls, procs } = fakeSpawn();
+    const m = new SessionManager(spawn);
+    const data: Array<[string, string]> = []; const exits: Array<[string, number]> = [];
+    m.on('data', (p: string, d: string) => data.push([p, d]));
+    m.on('exit', (p: string, c: number) => exits.push([p, c]));
+    m.start(A, opts); m.start(B, opts);
+    expect(calls.map((c) => c.opts.cwd)).toEqual([A, B]);
+    expect(m.list().map((s) => [s.path, s.label, s.running])).toEqual([[A, 'a', true], [B, 'b', true]]);
+    procs[0]!.emitData('from a'); procs[1]!.emitData('from b');
+    expect(data).toEqual([[A, 'from a'], [B, 'from b']]);
+    m.write(A, 'x'); m.resize(B, 100, 30);
+    expect(procs[0]!.written).toEqual(['x']); expect(procs[1]!.size).toEqual([100, 30]);
+    procs[1]!.emitExit(0);
+    expect(exits).toEqual([[B, 0]]);
+    expect(m.has(B)).toBe(false); expect(m.has(A)).toBe(true);
   });
 
-  it('kills the previous process when started again, and ignores write/resize when idle', () => {
-    const f = fakeSpawn();
-    const m = new PtyManager(f.spawn);
-    m.start({ cwd: 'a', command: 'claude', args: [], cols: 1, rows: 1 });
-    m.start({ cwd: 'b', command: 'claude', args: [], cols: 1, rows: 1 });
-    expect(f.procs[0].killed).toBe(true);
-    m.kill();
-    expect(f.procs[1].killed).toBe(true);
-    expect(() => { m.write('x'); m.resize(1, 1); }).not.toThrow();
+  it('enforces the session limit, but restarting an existing path does not count', () => {
+    const { spawn, procs } = fakeSpawn();
+    const m = new SessionManager(spawn);
+    for (let i = 0; i < MAX_SESSIONS; i++) m.start(`C:\\P\\p${i}`, opts);
+    expect(() => m.start('C:\\P\\extra', opts)).toThrow(/too many sessions/);
+    m.start('C:\\P\\p0', opts);   // 同 path 重啟：舊的被 kill，數量不變
+    expect(procs[0]!.killed).toBe(true);
+    expect(m.list()).toHaveLength(MAX_SESSIONS);
   });
 
-  it('ignores exit events from superseded or killed processes', () => {
-    const f = fakeSpawn();
-    const m = new PtyManager(f.spawn);
-    const exit = vi.fn();
-    m.on('exit', exit);
-
-    m.start({ cwd: 'a', command: 'claude', args: [], cols: 1, rows: 1 });
-    m.start({ cwd: 'b', command: 'claude', args: [], cols: 1, rows: 1 });
-    expect(f.procs[0].killed).toBe(true);
-
-    // Stale exit from the superseded process A must be ignored.
-    f.procs[0].emitExit(1);
-    expect(exit).not.toHaveBeenCalled();
-    expect(m.isRunning()).toBe(true);
-
-    // Exit from the current, healthy process B must still be emitted.
-    f.procs[1].emitExit(0);
-    expect(exit).toHaveBeenCalledTimes(1);
-    expect(exit).toHaveBeenCalledWith(0);
-    expect(m.isRunning()).toBe(false);
-
-    // After an explicit kill(), the killed process's exit must not fire 'exit'.
-    exit.mockClear();
-    m.start({ cwd: 'c', command: 'claude', args: [], cols: 1, rows: 1 });
-    m.kill();
-    f.procs[2].emitExit(0);
-    expect(exit).not.toHaveBeenCalled();
+  it('drops data and exit from a superseded or killed process', () => {
+    const { spawn, procs } = fakeSpawn();
+    const m = new SessionManager(spawn);
+    const events: string[] = [];
+    m.on('data', (p: string, d: string) => events.push(`data:${d}`));
+    m.on('exit', (p: string, c: number) => events.push(`exit:${c}`));
+    m.start(A, opts);
+    m.start(A, opts);
+    procs[0]!.emitData('old'); procs[0]!.emitExit(1);
+    procs[1]!.emitData('new');
+    expect(events).toEqual(['data:new']);
+    m.kill(A);
+    procs[1]!.emitData('late'); procs[1]!.emitExit(0);
+    expect(events).toEqual(['data:new']);
+    expect(procs[1]!.killed).toBe(true);
   });
 
-  it('ignores data from superseded or killed processes', () => {
-    const f = fakeSpawn();
-    const m = new PtyManager(f.spawn);
-    const data = vi.fn();
-    m.on('data', data);
+  it('emits idle per session after 3 s of silence and false on kill/exit', () => {
+    const { spawn, procs } = fakeSpawn();
+    const m = new SessionManager(spawn);
+    const idle: Array<[string, boolean]> = [];
+    m.on('idle', (p: string, i: boolean) => idle.push([p, i]));
+    m.start(A, opts); m.start(B, opts);
+    procs[0]!.emitData('x'); procs[1]!.emitData('y');
+    vi.advanceTimersByTime(3000);
+    expect(idle).toEqual([[A, true], [B, true]]);
+    expect(m.list().map((s) => s.idle)).toEqual([true, true]);
+    procs[0]!.emitData('more');
+    expect(idle.at(-1)).toEqual([A, false]);
+    m.kill(B);
+    expect(idle.at(-1)).toEqual([B, false]);
+    procs[0]!.emitExit(0);
+    expect(idle.at(-1)).toEqual([A, false]);
+  });
 
-    m.start({ cwd: 'a', command: 'claude', args: [], cols: 1, rows: 1 });
-    m.start({ cwd: 'b', command: 'claude', args: [], cols: 1, rows: 1 });
-
-    // Trailing output from the superseded process A must be dropped.
-    f.procs[0].emitData('stale');
-    expect(data).not.toHaveBeenCalled();
-
-    // Output from the current process B is still forwarded.
-    f.procs[1].emitData('live');
-    expect(data).toHaveBeenCalledWith('live');
-
-    // After an explicit kill(), trailing output must not be emitted either.
-    data.mockClear();
-    m.kill();
-    f.procs[1].emitData('after kill');
-    expect(data).not.toHaveBeenCalled();
+  it('killAll kills every session and list is empty', () => {
+    const { spawn, procs } = fakeSpawn();
+    const m = new SessionManager(spawn);
+    m.start(A, opts); m.start(B, opts);
+    m.killAll();
+    expect(procs.every((p) => p.killed)).toBe(true);
+    expect(m.list()).toEqual([]);
+    expect(() => m.write(A, 'x')).not.toThrow();
   });
 });
 

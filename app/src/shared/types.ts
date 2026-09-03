@@ -70,6 +70,9 @@ export interface PtyStartOptions {
   rows: number;
 }
 
+/** 主程序目前活著的 Claude Code session */
+export interface SessionInfo { path: string; label: string; running: boolean; idle: boolean }
+
 /** docs/**\/*.md 的一筆；rel 為 repo 相對路徑（正斜線） */
 export interface DocEntry { rel: string; size: number; mtimeMs: number }
 
