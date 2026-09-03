@@ -76,6 +76,12 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       read: vi.fn(async () => ''),
       write: vi.fn(async () => {}),
     },
+    insights: {
+      collect: vi.fn(async () => ({ items: [], projects: 0, skipped: [] })),
+      pinned: vi.fn(async () => []),
+      pin: vi.fn(async () => []),
+      unpin: vi.fn(async () => []),
+    },
     openExternal: vi.fn(async () => {}),
     onDocsChanged: vi.fn((cb) => { listeners.docs.push(cb); return () => {}; }),
     pty: {

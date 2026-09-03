@@ -37,6 +37,12 @@ const api: PmApi = {
     read: (path, rel) => ipcRenderer.invoke('docs:read', path, rel),
     write: (path, rel, content) => ipcRenderer.invoke('docs:write', path, rel, content),
   },
+  insights: {
+    collect: () => ipcRenderer.invoke('insights:collect'),
+    pinned: () => ipcRenderer.invoke('insights:pinned'),
+    pin: (note) => ipcRenderer.invoke('insights:pin', note),
+    unpin: (cause) => ipcRenderer.invoke('insights:unpin', cause),
+  },
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pty: {
     start: (path, opts) => ipcRenderer.invoke('pty:start', path, opts),
