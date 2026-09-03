@@ -16,11 +16,18 @@ const entries = [
   { rel: 'docs/verify/checklist.md', size: 1, mtimeMs: 1 },
 ];
 
-function tab(over: Partial<{ selected: string | null; onSelect: (r: string | null) => void; docsRevision: number; onNotice: (t: string, k?: string) => void; path: string | null }> = {}) {
+function tab(over: Partial<{ selected: string | null; onSelect: (r: string | null) => void; docsRevision: number; onNotice: (t: string, k?: string) => void; path: string | null; hidden: boolean }> = {}) {
   return render(
     <DocsTab path={over.path === undefined ? P : over.path} stageDocs={['docs/product/prd.md']} selected={over.selected ?? null}
-      onSelect={over.onSelect ?? (() => {})} docsRevision={over.docsRevision ?? 0} hidden={false} onNotice={over.onNotice ?? (() => {})} />,
+      onSelect={over.onSelect ?? (() => {})} docsRevision={over.docsRevision ?? 0} hidden={over.hidden ?? false} onNotice={over.onNotice ?? (() => {})} />,
   );
+}
+
+/** 讓測試自行決定 docs.read 何時完成，用來模擬過期的回應。 */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
 }
 
 beforeEach(() => {
@@ -83,6 +90,61 @@ describe('DocsTab', () => {
     expect(await screen.findByText('檔案過大（超過 2 MB），請用外部程式開啟')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '用外部程式開啟' }));
     expect(openPath).toHaveBeenCalledWith('C:\\P\\alpha\\docs\\product\\prd.md');
+  });
+
+  it('reports a write failure and keeps the old content', async () => {
+    const onNotice = vi.fn();
+    docs.write.mockRejectedValueOnce(new Error('boom'));
+    tab({ selected: 'docs/verify/checklist.md', onNotice });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '第一項' }));
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('驗證清單寫入失敗：boom', 'error'));
+    expect(git.run).not.toHaveBeenCalled();
+    expect(screen.getByRole('checkbox', { name: '第一項' })).not.toBeChecked();
+  });
+
+  it('reports a rejected commit as a commit failure and keeps the new content', async () => {
+    const onNotice = vi.fn();
+    git.run.mockRejectedValueOnce(new Error('boom'));
+    tab({ selected: 'docs/verify/checklist.md', onNotice });
+    fireEvent.click(await screen.findByRole('checkbox', { name: '第一項' }));
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('驗證清單提交失敗：boom', 'error'));
+    expect(screen.getByRole('checkbox', { name: '第一項' })).toBeChecked();
+  });
+
+  it('never renders the previous doc under a newly selected one', async () => {
+    const pending = deferred<string>();
+    const { rerender } = tab({ selected: 'docs/product/prd.md' });
+    await screen.findByRole('heading', { level: 1, name: 'PRD' });
+    docs.read.mockImplementationOnce(() => pending.promise);
+    rerender(<DocsTab path={P} stageDocs={[]} selected="docs/verify/checklist.md" onSelect={() => {}} docsRevision={0} hidden={false} onNotice={() => {}} />);
+    expect(await screen.findByText('載入中…')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText('[tasks](../tech/tasks.md)')).toBeNull();
+    pending.resolve('# 清單\n- [ ] 第一項\n');
+    expect(await screen.findByRole('checkbox', { name: '第一項' })).toBeInTheDocument();
+    expect(screen.queryByText('載入中…')).toBeNull();
+  });
+
+  it('drops a stale read that resolves after the selection changed', async () => {
+    const stale = deferred<string>();
+    docs.read.mockImplementationOnce(() => stale.promise);
+    const { rerender } = tab({ selected: 'docs/product/prd.md' });
+    await waitFor(() => expect(docs.read).toHaveBeenCalledWith(P, 'docs/product/prd.md'));
+    rerender(<DocsTab path={P} stageDocs={[]} selected="docs/verify/checklist.md" onSelect={() => {}} docsRevision={0} hidden={false} onNotice={() => {}} />);
+    expect(await screen.findByRole('checkbox', { name: '第一項' })).toBeInTheDocument();
+    stale.resolve('# 舊的 PRD\n');
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: '第一項' })).toBeInTheDocument());
+    expect(screen.queryByRole('heading', { level: 1, name: '舊的 PRD' })).toBeNull();
+  });
+
+  it('defers listing while hidden and catches up once revealed', async () => {
+    const { rerender } = tab({ selected: 'docs/product/prd.md', hidden: true });
+    await waitFor(() => expect(docs.list).not.toHaveBeenCalled());
+    rerender(<DocsTab path={P} stageDocs={[]} selected="docs/product/prd.md" onSelect={() => {}} docsRevision={1} hidden onNotice={() => {}} />);
+    await waitFor(() => expect(docs.list).not.toHaveBeenCalled());
+    rerender(<DocsTab path={P} stageDocs={[]} selected="docs/product/prd.md" onSelect={() => {}} docsRevision={1} hidden={false} onNotice={() => {}} />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'PRD' })).toBeInTheDocument();
+    expect(docs.list).toHaveBeenCalledTimes(1);
   });
 
   it('shows placeholders without a project or selection', async () => {

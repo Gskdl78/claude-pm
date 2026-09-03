@@ -189,12 +189,23 @@ describe('Terminal', () => {
   });
 
   it('re-fits, resizes and focuses when it becomes visible again', () => {
+    const resize = (window as unknown as { pm: PmApi }).pm.pty.resize as unknown as ReturnType<typeof vi.fn>;
     const { rerender, container } = render(<Terminal status="running" launchSeq={1} onRestart={() => {}} visible={false} />);
     expect(container.querySelector('.term')).toHaveAttribute('hidden');
     term.focus.mockClear();
+    resize.mockClear();
     rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} visible />);
     expect(container.querySelector('.term')).not.toHaveAttribute('hidden');
     expect(term.focus).toHaveBeenCalled();
-    expect((window as unknown as { pm: PmApi }).pm.pty.resize).toHaveBeenCalledWith(80, 24);
+    expect(resize).toHaveBeenCalledWith(80, 24);
+  });
+
+  it('does not fit or focus on mount when it starts visible', () => {
+    const resize = (window as unknown as { pm: PmApi }).pm.pty.resize as unknown as ReturnType<typeof vi.fn>;
+    term.focus.mockClear();
+    resize.mockClear();
+    render(<Terminal status="idle" launchSeq={0} onRestart={() => {}} />);
+    expect(term.focus).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
   });
 });

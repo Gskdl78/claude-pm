@@ -25,6 +25,11 @@ describe('DocList', () => {
     fireEvent.click(within(all).getByRole('button', { name: 'build/log.md' }));
     expect(onSelect).toHaveBeenCalledWith('docs/build/log.md');
   });
+  it('lists a duplicated stage doc only once', () => {
+    render(<DocList entries={entries} stageDocs={['docs/product/prd.md', 'docs\\product\\prd.md']} selected={null} onSelect={() => {}} />);
+    const stage = screen.getByRole('group', { name: '目前階段' });
+    expect(within(stage).getAllByRole('button', { name: 'product/prd.md' })).toHaveLength(1);
+  });
   it('shows a hint when there are no docs', () => {
     render(<DocList entries={[]} stageDocs={[]} selected={null} onSelect={() => {}} />);
     expect(screen.getByText('此專案尚無文件')).toBeInTheDocument();

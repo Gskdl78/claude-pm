@@ -138,9 +138,14 @@ export function Terminal({ status, launchSeq, onRestart, visible = true }: Props
     }
   }, [status, launchSeq]);
 
+  const prevVisible = useRef(visible);
+
   // 從文件分頁切回來：隱藏期間 ResizeObserver 不會量到尺寸，要主動 fit 一次。
+  // 只處理「隱藏 → 顯示」，掛載時交給 [status, launchSeq] 那個 effect。
   useEffect(() => {
-    if (!visible) return;
+    const was = prevVisible.current;
+    prevVisible.current = visible;
+    if (!visible || was) return;
     const term = termRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;

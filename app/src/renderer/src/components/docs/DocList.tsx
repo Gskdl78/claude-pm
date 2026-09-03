@@ -20,7 +20,8 @@ function label(rel: string): string { return rel.replace(/^docs\//, ''); }
 export function DocList({ entries, stageDocs, selected, onSelect }: Props) {
   if (entries.length === 0) return <div className="doc-list"><div className="muted">此專案尚無文件</div></div>;
   const known = new Set(entries.map((e) => e.rel));
-  const stage = stageDocs.map((d) => d.replace(/\\/g, '/')).filter((d) => known.has(d));
+  // 正規化路徑後去重：同一份文件在階段清單裡重複出現時只列一次。
+  const stage = Array.from(new Set(stageDocs.map((d) => d.replace(/\\/g, '/')))).filter((d) => known.has(d));
   const groups = new Map<string, DocEntry[]>();
   for (const e of entries) {
     const g = groupOf(e.rel);
