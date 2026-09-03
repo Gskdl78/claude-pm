@@ -3,8 +3,8 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import type { GitCommit, PmApi, ProjectInfo, StageName } from '../../shared/types';
 
 vi.mock('./components/Terminal', () => ({
-  Terminal: ({ status, onRestart }: { status: string; onRestart: () => void }) => (
-    <div data-testid="terminal" data-status={status}><button onClick={onRestart}>重新啟動</button></div>
+  Terminal: ({ status, onRestart, visible = true }: { status: string; onRestart: () => void; visible?: boolean }) => (
+    <div data-testid="terminal" data-status={status} hidden={!visible}><button onClick={onRestart}>重新啟動</button></div>
   ),
 }));
 
@@ -37,9 +37,9 @@ function projectAt(name: string, stage: StageName | 'done', status: 'pending' | 
   return p;
 }
 
-type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: number) => void>; idle: Array<(i: boolean) => void> };
+type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: number) => void>; idle: Array<(i: boolean) => void>; docs: Array<() => void> };
 
-function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [], idle: [] }): PmApi {
+function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [], idle: [], docs: [] }): PmApi {
   const api: PmApi = {
     getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: null, recent: [] })),
     setRoot: vi.fn(),
@@ -72,7 +72,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       write: vi.fn(async () => {}),
     },
     openExternal: vi.fn(async () => {}),
-    onDocsChanged: vi.fn(() => () => {}),
+    onDocsChanged: vi.fn((cb) => { listeners.docs.push(cb); return () => {}; }),
     pty: {
       start: vi.fn(async () => {}),
       write: vi.fn(), resize: vi.fn(), kill: vi.fn(async () => {}),
@@ -111,7 +111,7 @@ describe('App', () => {
   });
 
   it('auto-opens lastProject with --continue and falls back when continue exits early', async () => {
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({
       getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
@@ -156,7 +156,7 @@ describe('App', () => {
   });
 
   it('falls back once without --continue when a continue launch fails late', async () => {
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({
       getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
@@ -254,18 +254,18 @@ describe('App', () => {
   });
 
   it('updates the stage panel when state changes arrive', async () => {
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({}, listeners);
     await renderApp(api);
     fireEvent.click(await screen.findByText('alpha'));
     await waitFor(() => expect(api.openProject).toHaveBeenCalled());
     const updated = project('alpha', 'done');
     updated.state!.stage = 'design';
-    updated.state!.stages.design = { status: 'in_progress', docs: ['docs/product/prd.md'] };
+    updated.state!.stages.design = { status: 'in_progress', docs: ['docs/product/demo/index.html'] };
     await act(async () => { listeners.state.forEach((cb) => cb(updated)); });
     expect(screen.getByText('產品設計')).toHaveClass('in_progress');
-    fireEvent.click(screen.getByRole('button', { name: 'docs/product/prd.md' }));
-    expect(api.openPath).toHaveBeenCalledWith('C:\\P\\alpha\\docs/product/prd.md');
+    fireEvent.click(screen.getByRole('button', { name: 'docs/product/demo/index.html' }));
+    expect(api.openPath).toHaveBeenCalledWith('C:\\P\\alpha\\docs\\product\\demo\\index.html');
   });
 
   it('mounts the git panel for the open project and refreshes it on git events', async () => {
@@ -284,7 +284,7 @@ describe('App', () => {
 
   it('enables the stage button and shows the waiting pill only while the pty is idle', async () => {
     mockGitPanel();
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const alpha = projectAt('alpha', 'design');
     const api = mockApi({
       listProjects: vi.fn(async () => [alpha]),
@@ -321,7 +321,7 @@ describe('App', () => {
 
   it('flashes the stage row and posts a notice when the stage advances', async () => {
     mockGitPanel();
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const alpha = projectAt('alpha', 'design');
     const api = mockApi({
       listProjects: vi.fn(async () => [alpha]),
@@ -345,7 +345,7 @@ describe('App', () => {
 
   it('seeds the stage baseline from 重建 state so the next change is reported', async () => {
     mockGitPanel();
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const alpha = projectAt('alpha', 'design');
     const api = mockApi({
       listProjects: vi.fn(async () => [alpha]),
@@ -365,7 +365,7 @@ describe('App', () => {
 
   it('reports 全部完成 when the last stage finishes and does not compare across projects', async () => {
     mockGitPanel();
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const alpha = projectAt('alpha', 'verify');
     const beta = projectAt('beta', 'env', 'pending');
     const api = mockApi({
@@ -387,7 +387,7 @@ describe('App', () => {
 
   it('clears idle when a new session starts', async () => {
     mockGitPanel();
-    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const alpha = projectAt('alpha', 'design');
     const api = mockApi({ listProjects: vi.fn(async () => [alpha]), openProject: vi.fn(async () => alpha) }, listeners);
     await renderApp(api);
@@ -401,5 +401,55 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新啟動' }));
     await waitFor(() => expect(api.pty.start).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('● 等待回覆')).toBeNull();
+  });
+  it('opens a stage doc in the docs tab and re-lists on project:docs', async () => {
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
+    const alpha = projectAt('alpha', 'design');
+    alpha.state!.stages.design.docs = ['docs/product/prd.md', 'docs/product/demo/index.html'];
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha]),
+      openProject: vi.fn(async () => alpha),
+      docs: { list: vi.fn(async () => [{ rel: 'docs/product/prd.md', size: 1, mtimeMs: 1 }]), read: vi.fn(async () => '# PRD'), write: vi.fn(async () => {}) },
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await screen.findByRole('button', { name: /產品設計/ });
+    expect(screen.getByRole('tab', { name: '終端機' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'docs/product/prd.md' }));
+    expect(screen.getByRole('tab', { name: '文件' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('terminal')).toHaveAttribute('hidden');
+    await waitFor(() => expect(api.docs.read).toHaveBeenCalledWith('C:\\P\\alpha', 'docs/product/prd.md'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'PRD' })).toBeInTheDocument();
+
+    // 非 md 的文件按鈕仍用外部程式開啟
+    fireEvent.click(screen.getByRole('button', { name: 'docs/product/demo/index.html' }));
+    expect(api.openPath).toHaveBeenCalledWith('C:\\P\\alpha\\docs\\product\\demo\\index.html');
+
+    const before = (api.docs.list as ReturnType<typeof vi.fn>).mock.calls.length;
+    act(() => { for (const cb of listeners.docs) cb(); });
+    await waitFor(() => expect((api.docs.list as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before));
+
+    fireEvent.click(screen.getByRole('tab', { name: '終端機' }));
+    expect(screen.getByTestId('terminal')).not.toHaveAttribute('hidden');
+  });
+
+  it('returns to the terminal tab and clears the selected doc when switching projects', async () => {
+    const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
+    const alpha = projectAt('alpha', 'design');
+    alpha.state!.stages.design.docs = ['docs/product/prd.md'];
+    const beta = projectAt('beta', 'env', 'pending');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (path: string) => (path.endsWith('alpha') ? alpha : beta)),
+      docs: { list: vi.fn(async () => [{ rel: 'docs/product/prd.md', size: 1, mtimeMs: 1 }]), read: vi.fn(async () => '# PRD'), write: vi.fn(async () => {}) },
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    fireEvent.click(await screen.findByRole('button', { name: 'docs/product/prd.md' }));
+    expect(screen.getByRole('tab', { name: '文件' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByText('beta'));
+    await waitFor(() => expect(screen.getByRole('tab', { name: '終端機' })).toHaveAttribute('aria-selected', 'true'));
+    expect(screen.queryByText('docs/product/prd.md', { selector: '.center-title' })).toBeNull();
   });
 });
