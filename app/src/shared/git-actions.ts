@@ -46,6 +46,7 @@ export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
     case 'deleteTag': return ['tag', '-d', a.name];
     case 'abortMerge': return ['merge', '--abort'];
     case 'addRemote': return ['remote', 'add', 'origin', a.url];
+    case 'commitPaths': return ['commit', '-m', a.message, '--', ...a.paths];
   }
 }
 
@@ -119,5 +120,7 @@ export function describeGitAction(a: GitAction, st: GitStatus): ConfirmSpec | nu
       return { title: '中止合併', description: '放棄這次合併，工作目錄與索引回到合併前的狀態；合併過程中手動改過的衝突檔案會被還原。', danger: false };
     case 'addRemote':
       return { title: '設定遠端', description: `把這個專案連到 ${a.url}（遠端名稱 origin）。`, danger: false };
+    case 'commitPaths':
+      return { title: '提交檔案', description: `只提交下列檔案的目前內容（不動其他已暫存的變更）：${a.paths.join('、')}。訊息：「${a.message}」。`, danger: false };
   }
 }

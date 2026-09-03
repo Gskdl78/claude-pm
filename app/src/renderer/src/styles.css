@@ -21,7 +21,7 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 .app { height: 100%; display: grid; grid-template-columns: 240px 1fr 360px; grid-template-rows: auto 1fr; grid-template-areas: "side stage git" "side term git"; }
 .side { grid-area: side; background: var(--panel); border-right: 1px solid var(--border); overflow: auto; padding: 8px; }
 .stage { grid-area: stage; border-bottom: 1px solid var(--border); padding: 8px 12px; }
-.term { grid-area: term; min-height: 0; position: relative; }
+.term { position: relative; height: 100%; min-height: 0; }
 .git { grid-area: git; background: var(--panel); border-left: 1px solid var(--border); overflow: hidden; padding: 0; display: flex; flex-direction: column; min-height: 0; }
 .error { color: var(--danger); padding: 6px 0; }
 .muted { color: var(--muted); }
@@ -222,3 +222,63 @@ button.danger-btn:hover { background: #d61a1a; border-color: #d61a1a; }
 .wizard-step label { font-size: 12px; }
 .wizard-fields { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; }
 .wizard-fields input:not([type='radio']) { width: 100%; }
+
+/* --- center pane (terminal / docs tabs) ---------------------------------- */
+/* 用 section.center 提高權重：.center 也被載入中／找不到 Claude 的置中畫面使用，
+   那條規則的 align-items/justify-content/gap 會讓分頁列與內容縮成內容寬度。 */
+section.center { grid-area: term; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0; min-height: 0; }
+.center-tabs { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.center-tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 0 10px; height: 100%; color: var(--muted); }
+.center-tab:hover { color: var(--fg); border-bottom-color: var(--border); }
+.center-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.center-title { margin-left: auto; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; }
+.center-body { flex: 1; min-height: 0; position: relative; }
+.term[hidden], .docs[hidden] { display: none; }
+
+/* --- docs tab ----------------------------------------------------------- */
+.docs { display: grid; grid-template-columns: 220px 1fr; height: 100%; min-height: 0; }
+.docs-empty { grid-column: 1 / -1; padding: 16px; }
+.doc-list { overflow: auto; border-right: 1px solid var(--border); background: var(--panel); padding: 8px; display: flex; flex-direction: column; gap: 12px; }
+.doc-group-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
+.doc-folder-title { font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+.doc-item { display: block; width: 100%; text-align: left; background: transparent; border: none; border-radius: 4px; padding: 3px 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-item:hover { background: var(--hover); border: none; }
+.doc-item.active { background: var(--active); color: var(--accent); }
+.doc-view { overflow: auto; padding: 12px 24px 32px; }
+.doc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.doc-head .doc-name { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- markdown body ------------------------------------------------------- */
+.md-body { max-width: 900px; line-height: 1.6; }
+.md-body h1 { font-size: 22px; margin: 16px 0 8px; }
+.md-body h2 { font-size: 18px; margin: 20px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.md-body h3 { font-size: 15px; margin: 16px 0 6px; }
+.md-body p, .md-body ul, .md-body ol { margin: 8px 0; }
+.md-body li { margin: 2px 0; }
+.md-body a { color: var(--accent); text-decoration: none; }
+.md-body a:hover { text-decoration: underline; }
+.md-body code { background: var(--panel); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; font-family: Cascadia Mono, Consolas, monospace; font-size: 12px; }
+.md-body pre { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+.md-body pre code { background: transparent; border: none; padding: 0; }
+.md-body table { border-collapse: collapse; margin: 8px 0; }
+.md-body th, .md-body td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.md-body th { background: var(--panel); }
+.md-body blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--border); color: var(--muted); }
+.md-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.md-body .task-mark { color: var(--muted); }
+.md-body pre.mermaid { background: transparent; border: none; text-align: center; }
+.md-body pre.mermaid:not(.rendered) { white-space: pre-wrap; color: var(--muted); }
+.md-body pre.mermaid svg { max-width: 100%; height: auto; }
+.md-body .mermaid-error { border: 1px solid var(--danger); border-radius: 6px; text-align: left; }
+.md-body .mermaid-error-msg { color: var(--danger); margin-bottom: 6px; }
+
+/* --- checklist ---------------------------------------------------------- */
+.checklist { max-width: 900px; line-height: 1.6; }
+.checklist h1 { font-size: 22px; margin: 16px 0 8px; }
+.checklist h2 { font-size: 18px; margin: 20px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.checklist h3, .checklist h4 { font-size: 15px; margin: 16px 0 6px; }
+.checklist p { margin: 6px 0; color: var(--muted); }
+.checklist label { display: flex; align-items: flex-start; gap: 8px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+.checklist label:hover { background: var(--hover); }
+.checklist label input { margin-top: 4px; }
+.checklist label.done { color: var(--muted); text-decoration: line-through; }

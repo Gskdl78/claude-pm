@@ -348,6 +348,13 @@ describe('GitPanel', () => {
     expect(screen.getAllByText(/^階段 /)).toHaveLength(2);
   });
 
+  it('writes an error notice with the error class', async () => {
+    const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} notices={[]} />);
+    await screen.findByText('main');
+    rerender(<GitPanel path={P} commits={[]} revision={0} notices={[{ id: 1, text: '驗證清單提交失敗：boom', kind: 'error' }]} />);
+    expect((await screen.findByText('驗證清單提交失敗：boom')).closest('.out')).toHaveClass('error');
+  });
+
   it('keeps a notice that arrives together with a project switch', async () => {
     const { rerender } = render(<GitPanel path={P} commits={[]} revision={0} notices={[]} />);
     await screen.findByText('main');

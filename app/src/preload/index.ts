@@ -30,6 +30,12 @@ const api: PmApi = {
     check: (path) => ipcRenderer.invoke('gh:check', path),
     repoCreate: (path, name, isPrivate) => ipcRenderer.invoke('gh:repoCreate', path, name, isPrivate),
   },
+  docs: {
+    list: (path) => ipcRenderer.invoke('docs:list', path),
+    read: (path, rel) => ipcRenderer.invoke('docs:read', path, rel),
+    write: (path, rel, content) => ipcRenderer.invoke('docs:write', path, rel, content),
+  },
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pty: {
     start: (path, opts) => ipcRenderer.invoke('pty:start', path, opts),
     write: (data) => ipcRenderer.send('pty:write', data),
@@ -41,6 +47,7 @@ const api: PmApi = {
   },
   onStateChanged: (cb) => on('project:state', cb),
   onGitChanged: (cb) => on('project:git', cb),
+  onDocsChanged: (cb) => on<[]>('project:docs', cb),
 };
 
 contextBridge.exposeInMainWorld('pm', api);

@@ -9,6 +9,8 @@ interface Props {
   /** Bumped by App on every successful pty start, so each new pty gets re-fitted. */
   launchSeq: number;
   onRestart: () => void;
+  /** 文件分頁時為 false，元件仍掛載 */
+  visible?: boolean;
 }
 
 /**
@@ -33,7 +35,7 @@ async function readClipboard(): Promise<string> {
   }
 }
 
-export function Terminal({ status, launchSeq, onRestart }: Props) {
+export function Terminal({ status, launchSeq, onRestart, visible = true }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -136,8 +138,24 @@ export function Terminal({ status, launchSeq, onRestart }: Props) {
     }
   }, [status, launchSeq]);
 
+  const prevVisible = useRef(visible);
+
+  // 從文件分頁切回來：隱藏期間 ResizeObserver 不會量到尺寸，要主動 fit 一次。
+  // 只處理「隱藏 → 顯示」，掛載時交給 [status, launchSeq] 那個 effect。
+  useEffect(() => {
+    const was = prevVisible.current;
+    prevVisible.current = visible;
+    if (!visible || was) return;
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    fit.fit();
+    pm.pty.resize(term.cols, term.rows);
+    term.focus();
+  }, [visible]);
+
   return (
-    <div className="term">
+    <div className="term" hidden={!visible}>
       <div className="xterm-host" ref={host} />
       {status === 'exited' && (
         <div className="overlay">

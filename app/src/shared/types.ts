@@ -67,8 +67,11 @@ export interface PtyStartOptions {
   rows: number;
 }
 
-/** App 要寫進右欄輸出區的一行提示（例如階段切換）；id 遞增、只增不減 */
-export interface Notice { id: number; text: string }
+/** docs/**\/*.md 的一筆；rel 為 repo 相對路徑（正斜線） */
+export interface DocEntry { rel: string; size: number; mtimeMs: number }
+
+/** App 要寫進右欄輸出區的一行提示（例如階段切換、清單提交結果）；id 遞增、只增不減 */
+export interface Notice { id: number; text: string; kind?: 'hint' | 'error' }
 
 // ---- git panel ----------------------------------------------------------------
 export interface GitFileChange {
@@ -142,7 +145,8 @@ export type GitAction =
   | { kind: 'tag'; name: string; hash: string | null }
   | { kind: 'deleteTag'; name: string }
   | { kind: 'abortMerge' }
-  | { kind: 'addRemote'; url: string };
+  | { kind: 'addRemote'; url: string }
+  | { kind: 'commitPaths'; message: string; paths: string[] };
 
 export interface GitApi {
   status(path: string): Promise<GitStatus>;
@@ -158,6 +162,12 @@ export interface GhApi {
   repoCreate(path: string, name: string, isPrivate: boolean): Promise<GitResult>;
 }
 
+export interface DocsApi {
+  list(path: string): Promise<DocEntry[]>;
+  read(path: string, rel: string): Promise<string>;
+  write(path: string, rel: string, content: string): Promise<void>;
+}
+
 export interface PmApi {
   getConfig(): Promise<AppConfig>;
   setRoot(root: string): Promise<AppConfig>;
@@ -171,6 +181,11 @@ export interface PmApi {
   openPath(path: string): Promise<string>;
   git: GitApi;
   gh: GhApi;
+  docs: DocsApi;
+  /** 只開 http(s) / mailto；其他一律拒絕 */
+  openExternal(url: string): Promise<void>;
+  /** docs/**\/*.md 有新增、刪除或修改（每 2 秒比對一次） */
+  onDocsChanged(cb: () => void): () => void;
   pty: {
     start(path: string, opts: PtyStartOptions): Promise<void>;
     write(data: string): void;

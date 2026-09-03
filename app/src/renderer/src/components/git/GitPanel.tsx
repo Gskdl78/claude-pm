@@ -114,7 +114,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES }: Prop
     for (const n of notices) {
       if (n.id <= lastNoticeRef.current) continue;
       lastNoticeRef.current = n.id;
-      log('hint', n.text);
+      log(n.kind ?? 'hint', n.text);
     }
   }, [notices, log]);
 

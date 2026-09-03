@@ -88,4 +88,23 @@ describe('ProjectWatcher', () => {
     await wait(120);
     expect(n).toBe(0);
   });
+
+  it('emits docs when a markdown file under docs/ changes (slower cadence)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pm-watch-'));
+    mkdirSync(join(dir, 'docs'));
+    writeFileSync(join(dir, 'docs', 'a.md'), '#');
+    const w = new ProjectWatcher(dir, 30);
+    w.start();
+    try {
+      await wait(50);
+      const p1 = once(w, 'docs');
+      writeFileSync(join(dir, 'docs', 'a.md'), '# changed');
+      await p1;
+      const p2 = once(w, 'docs');
+      writeFileSync(join(dir, 'docs', 'b.md'), '#');
+      await p2;
+    } finally {
+      w.stop();
+    }
+  });
 });

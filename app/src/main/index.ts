@@ -4,6 +4,7 @@ import { registerIpc } from './ipc';
 import { installAppMenu } from './menu';
 import { PtyManager } from './pty';
 import { getPluginDir } from './plugin-dir';
+import { isExternalUrl } from './url-policy';
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -21,7 +22,8 @@ function createWindow(): BrowserWindow {
   });
   win.on('ready-to-show', () => win.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    // 只有 http(s) / mailto 才交給系統瀏覽器；其他協定（file:、javascript: 等）一律忽略。
+    if (isExternalUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   // The renderer only ever shows the bundled UI; a navigation would replace it.

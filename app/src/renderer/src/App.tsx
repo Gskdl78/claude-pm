@@ -5,8 +5,9 @@ import { pm } from './api';
 import { ProjectList } from './components/ProjectList';
 import { NewProjectDialog } from './components/NewProjectDialog';
 import { StagePanel } from './components/StagePanel';
-import { Terminal } from './components/Terminal';
 import { GitPanel } from './components/git/GitPanel';
+import { CenterPane, type CenterTab } from './components/CenterPane';
+import { isDocRelPath } from '../../shared/docs-path';
 import { errorMessage } from './errors';
 import { ClaudeMissing } from './components/ClaudeMissing';
 
@@ -35,6 +36,9 @@ export default function App() {
   const [ptyIdle, setPtyIdle] = useState(false);
   const [flashSeq, setFlashSeq] = useState(0);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [centerTab, setCenterTab] = useState<CenterTab>('terminal');
+  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const [docsRevision, setDocsRevision] = useState(0);
 
   const currentRef = useRef<ProjectInfo | null>(null);
   const launchRef = useRef<{ usedContinue: boolean } | null>(null);
@@ -53,6 +57,12 @@ export default function App() {
     lastStageRef.current = p.state ? { path: p.path, stage: p.state.stage } : null;
   }, []);
 
+  // 階段提示與文件分頁共用同一個佇列；只保留最近 MAX_NOTICES 筆。
+  const pushNotice = useCallback((text: string, kind: 'hint' | 'error' = 'hint') => {
+    noticeId.current += 1;
+    setNotices((prev) => [...prev, { id: noticeId.current, text, kind }].slice(-MAX_NOTICES));
+  }, []);
+
   // watcher 送來新 state 時比對階段：同一專案、階段真的往前走才記一筆提示並閃爍。
   const noteStageChange = useCallback((p: ProjectInfo) => {
     if (!p.state) return;
@@ -63,10 +73,9 @@ export default function App() {
     lastStageRef.current = { path: p.path, stage: next };
     const from = STAGE_LABELS[last.stage];
     const to = next === 'done' ? '全部完成' : STAGE_LABELS[next];
-    noticeId.current += 1;
-    setNotices((prev) => [...prev, { id: noticeId.current, text: `階段 ${from} 完成 → ${to}` }].slice(-MAX_NOTICES));
+    pushNotice(`階段 ${from} 完成 → ${to}`);
     setFlashSeq((n) => n + 1);
-  }, []);
+  }, [pushNotice]);
 
   const refreshProjects = useCallback(async () => {
     const list = await pm.listProjects();
@@ -102,6 +111,8 @@ export default function App() {
   const openProject = useCallback(async (p: ProjectInfo) => {
     setError(null);
     setPtyIdle(false);
+    setCenterTab('terminal');
+    setSelectedDoc(null);
     const prev = currentRef.current;
     setCurrentProject(p);
     try {
@@ -148,6 +159,7 @@ export default function App() {
       if (currentRef.current?.path === p.path) { noteStageChange(p); setCurrentProject(p); }
     });
     const offGit = pm.onGitChanged((c) => { setCommits(c); setGitRevision((n) => n + 1); });
+    const offDocs = pm.onDocsChanged(() => setDocsRevision((n) => n + 1));
     // idle 是狀態不是邊緣事件：同一個值可能連送兩次，直接覆寫即可。
     const offIdle = pm.pty.onIdle((idle) => setPtyIdle(idle));
     const offExit = pm.pty.onExit((code) => {
@@ -162,7 +174,7 @@ export default function App() {
       }
       setPtyStatus('exited');
     });
-    return () => { offState(); offGit(); offIdle(); offExit(); };
+    return () => { offState(); offGit(); offDocs(); offIdle(); offExit(); };
   }, [launch, setCurrentProject, noteStageChange]);
 
   const handleNew = async (name: string) => {
@@ -201,8 +213,15 @@ export default function App() {
     }
   };
 
+  // .md 在 App 內預覽；其他（demo html 等）維持用外部程式開啟。
   const handleOpenDoc = (rel: string) => {
-    if (current) void pm.openPath(`${current.path}\\${rel}`);
+    if (!current) return;
+    const norm = rel.replace(/\\/g, '/');
+    if (isDocRelPath(norm)) { setSelectedDoc(norm); setCenterTab('docs'); return; }
+    // shell.openPath 成功回空字串，失敗時把系統的錯誤訊息帶給使用者。
+    void pm.openPath(`${current.path}\\${rel.replace(/\//g, '\\')}`).then((r) => {
+      if (r) pushNotice(`無法開啟檔案：${r}`, 'error');
+    });
   };
 
   // 只在 Claude Code 停在提示符時送，避免打斷正在輸出的回應。
@@ -229,7 +248,11 @@ export default function App() {
         <StagePanel project={current} canRun={ptyStatus === 'running' && ptyIdle} flashSeq={flashSeq}
           onRebuild={handleRebuild} onOpenDoc={handleOpenDoc} onRunStage={runStage} />
       </header>
-      <Terminal status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }} />
+      <CenterPane tab={centerTab} onTab={setCenterTab}
+        status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }}
+        path={current?.path ?? null}
+        stageDocs={current?.state && current.state.stage !== 'done' ? current.state.stages[current.state.stage].docs ?? [] : []}
+        selectedDoc={selectedDoc} onSelectDoc={setSelectedDoc} docsRevision={docsRevision} onNotice={pushNotice} />
       <aside className="git">
         <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} />
       </aside>

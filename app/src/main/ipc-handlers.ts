@@ -5,8 +5,10 @@ import { assertInsideRoot } from './paths';
 import { listProjects, readProjectInfo, createProject, initExisting, rebuildState } from './projects';
 import { getLog } from './git';
 import { createGitHandlers, type GitHandlers } from './git-handlers';
+import { createDocsHandlers, type DocsHandlers } from './docs-handlers';
 import { PtyManager, buildClaudeArgs, findClaude } from './pty';
 import { ProjectWatcher } from './watcher';
+import { BLOCKED_OPEN_EXT_RE, isExternalUrl } from './url-policy';
 
 export interface HandlerDeps {
   pluginDir: string;
@@ -14,6 +16,8 @@ export interface HandlerDeps {
   pty: PtyManager;
   send: (channel: string, ...args: unknown[]) => void;
   openPath?: (p: string) => Promise<string>;
+  /** 只接 http(s) / mailto 的外部連結，交給系統瀏覽器開啟 */
+  openExternal?: (url: string) => Promise<void>;
   checkClaude?: () => Promise<ClaudeCheck>;
   /** pty 成功啟動後呼叫，帶專案目錄（已通過 root 守衛） */
   onSessionStart?: (dir: string) => void;
@@ -21,7 +25,7 @@ export interface HandlerDeps {
   onSessionEnd?: () => void;
 }
 
-export interface Handlers extends GitHandlers {
+export interface Handlers extends GitHandlers, DocsHandlers {
   'config:get': () => Promise<AppConfig>;
   'config:setRoot': (root: string) => Promise<AppConfig>;
   'claude:check': () => Promise<ClaudeCheck>;
@@ -32,6 +36,7 @@ export interface Handlers extends GitHandlers {
   'projects:rebuild': (path: string) => Promise<ProjectInfo>;
   'git:log': (path: string, n?: number) => Promise<GitCommit[]>;
   'shell:openPath': (path: string) => Promise<string>;
+  'shell:openExternal': (url: string) => Promise<void>;
   'pty:start': (path: string, opts: PtyStartOptions) => Promise<void>;
   'pty:write': (data: string) => void;
   'pty:resize': (cols: number, rows: number) => void;
@@ -66,6 +71,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     watcher = new ProjectWatcher(dir);
     watcher.on('state', () => deps.send('project:state', readProjectInfo(dir)));
     watcher.on('git', () => { void getLog(dir).then((log) => deps.send('project:git', log)); });
+    watcher.on('docs', () => deps.send('project:docs'));
     watcher.start();
   };
 
@@ -104,9 +110,18 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     ...createGitHandlers(guard),
 
+    ...createDocsHandlers(guard),
+
     'shell:openPath': async (path) => {
       const p = guard(path);
+      // 文件裡的連結最後會走到這裡，不能讓它啟動 .bat/.exe 之類的可執行檔。
+      if (BLOCKED_OPEN_EXT_RE.test(p)) throw new Error('refusing to open executable file');
       return deps.openPath ? deps.openPath(p) : '';
+    },
+
+    'shell:openExternal': async (url) => {
+      if (!isExternalUrl(url)) throw new Error('invalid url');
+      await deps.openExternal?.(url);
     },
 
     'pty:start': async (path, opts) => {
