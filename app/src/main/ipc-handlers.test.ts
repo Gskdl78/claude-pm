@@ -14,7 +14,7 @@ beforeAll(() => {
   });
 });
 
-function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty' | 'openExternal'>> = {}) {
+function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged'>> = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
@@ -228,5 +228,34 @@ describe('ipc handlers', () => {
     writeFileSync(join(created.path, 'docs', 'a.md'), '# a');
     expect((await h['docs:list'](created.path)).map((d) => d.rel)).toEqual(['docs/a.md']);
     await expect(h['docs:read'](join(created.path, '..', '..', 'x'), 'docs/a.md')).rejects.toThrow();
+  });
+
+  it('config:update validates, persists and notifies', async () => {
+    const onConfigChanged = vi.fn();
+    const { h, configFile } = setup({ onConfigChanged });
+    const cfg = await h['config:update']({ implModel: 'sonnet', termFontSize: 16, notifyOnIdle: false });
+    expect(cfg).toMatchObject({ implModel: 'sonnet', termFontSize: 16, notifyOnIdle: false, reviewModel: 'fable' });
+    expect(JSON.parse(readFileSync(configFile, 'utf8'))).toMatchObject({ implModel: 'sonnet', termFontSize: 16 });
+    expect(onConfigChanged).toHaveBeenCalledWith(expect.objectContaining({ implModel: 'sonnet' }));
+    await expect(h['config:update']({ maxRetries: 99 })).rejects.toThrow(/invalid maxRetries/);
+    await expect(h['config:update']({ root: 'X' } as never)).resolves.toMatchObject({ root: (await h['config:get']()).root });
+  });
+
+  it('dialog:pickFolder forwards to the injected picker with the current root', async () => {
+    const pickFolder = vi.fn(async () => 'D:\\Chosen');
+    const { h, root } = setup({ pickFolder });
+    expect(await h['dialog:pickFolder']()).toBe('D:\\Chosen');
+    expect(pickFolder).toHaveBeenCalledWith(root);
+    const { h: h2 } = setup();
+    expect(await h2['dialog:pickFolder']()).toBeNull();
+  });
+
+  it('projects:create uses the configured model policy', async () => {
+    const { h } = setup();
+    await h['config:update']({ implModel: 'sonnet', maxRetries: 2 });
+    const created = await h['projects:create']('policy');
+    const claude = readFileSync(join(created.path, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('實作 subagent：`sonnet`');
+    expect(claude).toContain('審核退回上限 2 次');
   });
 });

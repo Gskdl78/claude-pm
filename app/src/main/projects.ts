@@ -33,22 +33,30 @@ export function listProjects(root: string): ProjectInfo[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export interface ScaffoldVars { implModel: string; reviewModel: string; maxRetries: number }
+
+/** 轉成 scaffold.mjs 的 CLI 旗標；沒有 vars 就用 plugin 的預設。 */
+export function scaffoldArgs(vars?: ScaffoldVars): string[] {
+  if (!vars) return [];
+  return [`--impl-model=${vars.implModel}`, `--review-model=${vars.reviewModel}`, `--max-retries=${vars.maxRetries}`];
+}
+
 function scaffoldScript(pluginDir: string): string {
   return join(pluginDir, 'scripts', 'scaffold.mjs');
 }
 
-export async function createProject(root: string, name: string, pluginDir: string): Promise<ProjectInfo> {
+export async function createProject(root: string, name: string, pluginDir: string, vars?: ScaffoldVars): Promise<ProjectInfo> {
   if (!NAME_RE.test(name)) throw new Error(`invalid project name: ${name}`);
   const dir = join(root, name);
   if (existsSync(dir)) throw new Error(`folder already exists: ${dir}`);
-  await runNodeScript(scaffoldScript(pluginDir), [dir, name]);
+  await runNodeScript(scaffoldScript(pluginDir), [dir, name, ...scaffoldArgs(vars)]);
   return readProjectInfo(dir);
 }
 
-export async function initExisting(dir: string, pluginDir: string): Promise<ProjectInfo> {
+export async function initExisting(dir: string, pluginDir: string, vars?: ScaffoldVars): Promise<ProjectInfo> {
   if (!existsSync(dir)) throw new Error(`folder not found: ${dir}`);
   if (existsSync(statePath(dir))) throw new Error(`already initialized: ${dir}`);
-  await runNodeScript(scaffoldScript(pluginDir), [dir, basename(dir)]);
+  await runNodeScript(scaffoldScript(pluginDir), [dir, basename(dir), ...scaffoldArgs(vars)]);
   return readProjectInfo(dir);
 }
 

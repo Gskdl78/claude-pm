@@ -46,6 +46,8 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
   const api: PmApi = {
     getConfig: vi.fn(async () => ({ ...CFG, lastProject: null })),
     setRoot: vi.fn(),
+    updateConfig: vi.fn(async (patch) => ({ ...CFG, ...patch })),
+    pickFolder: vi.fn(async () => null),
     checkClaude: vi.fn(async () => ({ ok: true, path: 'claude' })),
     listProjects: vi.fn(async () => [project('alpha')]),
     createProject: vi.fn(async (name: string) => project(name)),

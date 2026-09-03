@@ -174,6 +174,10 @@ export interface DocsApi {
 export interface PmApi {
   getConfig(): Promise<AppConfig>;
   setRoot(root: string): Promise<AppConfig>;
+  /** 只改設定欄位；root 走 setRoot */
+  updateConfig(patch: ConfigPatch): Promise<AppConfig>;
+  /** 系統資料夾選擇器；取消回 null，不改設定 */
+  pickFolder(): Promise<string | null>;
   checkClaude(): Promise<ClaudeCheck>;
   listProjects(): Promise<ProjectInfo[]>;
   createProject(name: string): Promise<ProjectInfo>;
