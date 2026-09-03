@@ -37,6 +37,7 @@ const api: PmApi = {
     kill: () => ipcRenderer.invoke('pty:kill'),
     onData: (cb) => on<[string]>('pty:data', cb),
     onExit: (cb) => on<[number]>('pty:exit', cb),
+    onIdle: (cb) => on<[boolean]>('pty:idle', cb),
   },
   onStateChanged: (cb) => on('project:state', cb),
   onGitChanged: (cb) => on('project:git', cb),

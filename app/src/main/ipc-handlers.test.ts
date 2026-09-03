@@ -14,7 +14,7 @@ beforeAll(() => {
   });
 });
 
-function setup() {
+function setup(extra: { onSessionStart?: (dir: string) => void } = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
@@ -34,7 +34,7 @@ function setup() {
   const pty = new PtyManager(spawn);
   const send = vi.fn();
   const openPath = vi.fn(async () => '');
-  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }) });
+  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), ...extra });
   return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes };
 }
 
@@ -161,5 +161,20 @@ describe('ipc handlers', () => {
     expect(openPath).toHaveBeenCalledWith(join(dir, 'CLAUDE.md'));
     expect(await h['claude:check']()).toEqual({ ok: true, path: 'x' });
     expect(existsSync(join(dir, '.claude'))).toBe(true);
+  });
+  it('pty:start reports the session directory through onSessionStart', async () => {
+    const onSessionStart = vi.fn();
+    const { h, root } = setup({ onSessionStart });
+    const created = await h['projects:create']('demo');
+    await h['projects:open'](created.path);
+    await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
+    expect(onSessionStart).toHaveBeenCalledWith(join(root, 'demo'));
+  });
+
+  it('pty:start does not call onSessionStart when the path is outside root', async () => {
+    const onSessionStart = vi.fn();
+    const { h, base } = setup({ onSessionStart });
+    await expect(h['pty:start'](join(base, 'outside'), { continue: false, cols: 80, rows: 24 })).rejects.toThrow();
+    expect(onSessionStart).not.toHaveBeenCalled();
   });
 });

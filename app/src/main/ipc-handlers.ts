@@ -15,6 +15,8 @@ export interface HandlerDeps {
   send: (channel: string, ...args: unknown[]) => void;
   openPath?: (p: string) => Promise<string>;
   checkClaude?: () => Promise<ClaudeCheck>;
+  /** pty 成功啟動後呼叫，帶專案目錄（已通過 root 守衛） */
+  onSessionStart?: (dir: string) => void;
 }
 
 export interface Handlers extends GitHandlers {
@@ -115,6 +117,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         cols: clampSize(opts.cols, 80),
         rows: clampSize(opts.rows, 24),
       });
+      deps.onSessionStart?.(dir);
     },
 
     'pty:write': (data) => { if (typeof data === 'string') deps.pty.write(data); },

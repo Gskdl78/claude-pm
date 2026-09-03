@@ -53,6 +53,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       write: vi.fn(), resize: vi.fn(), kill: vi.fn(async () => {}),
       onData: vi.fn(() => () => {}),
       onExit: vi.fn((cb) => { listeners.exit.push(cb); return () => {}; }),
+      onIdle: vi.fn(() => () => {}),
     },
     onStateChanged: vi.fn((cb) => { listeners.state.push(cb); return () => {}; }),
     onGitChanged: vi.fn(() => () => {}),

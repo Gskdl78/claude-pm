@@ -175,6 +175,8 @@ export interface PmApi {
     kill(): Promise<void>;
     onData(cb: (data: string) => void): () => void;
     onExit(cb: (code: number) => void): () => void;
+    /** true = Claude Code 停在提示符等輸入（3 秒無輸出）；false = 忙碌或無 session */
+    onIdle(cb: (idle: boolean) => void): () => void;
   };
   onStateChanged(cb: (p: ProjectInfo) => void): () => void;
   onGitChanged(cb: (commits: GitCommit[]) => void): () => void;
