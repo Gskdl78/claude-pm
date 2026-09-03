@@ -6,8 +6,8 @@ import { DEFAULT_SETTINGS } from '../../shared/config-schema';
 const CFG = { root: 'C:\\P', lastProject: null as string | null, recent: [] as string[], ...DEFAULT_SETTINGS };
 
 vi.mock('./components/Terminal', () => ({
-  Terminal: ({ status, onRestart, visible = true }: { status: string; onRestart: () => void; visible?: boolean }) => (
-    <div data-testid="terminal" data-status={status} hidden={!visible}><button onClick={onRestart}>重新啟動</button></div>
+  Terminal: ({ status, launchSeq, onRestart, visible = true }: { status: string; launchSeq: number; onRestart: () => void; visible?: boolean }) => (
+    <div data-testid="terminal" data-status={status} data-launch={launchSeq} hidden={!visible}><button onClick={onRestart}>重新啟動</button></div>
   ),
 }));
 
@@ -481,6 +481,7 @@ describe('App', () => {
     await renderApp(api);
     fireEvent.click(await screen.findByText('alpha'));
     await screen.findAllByText(/環境搭建/);   // StagePanel 同時有標題與按鈕，只要等專案開好
+    const seq = Number(screen.getByTestId('terminal').getAttribute('data-launch'));
     fireEvent.click(screen.getByRole('button', { name: '設定' }));
     fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
@@ -489,6 +490,25 @@ describe('App', () => {
     await waitFor(() => expect(api.listProjects).toHaveBeenCalledTimes(2));
     expect(screen.getByText('選擇或建立一個專案')).toBeInTheDocument();
     expect(screen.getByText('D:\\Other')).toBeInTheDocument();
+    // 換根目錄就是換 session：終端機要收到新的 launchSeq 才會清掉舊專案的畫面
+    expect(Number(screen.getByTestId('terminal').getAttribute('data-launch'))).toBeGreaterThan(seq);
+  });
+
+  it('keeps the new root when updateConfig fails after setRoot', async () => {
+    const api = mockApi({
+      setRoot: vi.fn(async () => ({ ...CFG, root: 'D:\\Other' })),
+      updateConfig: vi.fn(async () => { throw new Error('disk full'); }),
+    });
+    await renderApp(api);
+    await screen.findByText('alpha');
+    fireEvent.click(screen.getByRole('button', { name: '設定' }));
+    fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    // 根目錄已經換掉了：對話框留著顯示錯誤，但畫面必須跟著新的根目錄走
+    expect(await screen.findByText('disk full')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('D:\\Other')).toBeInTheDocument();
+    expect(api.listProjects).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the dialog open with the error when setRoot fails', async () => {

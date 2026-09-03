@@ -13,6 +13,8 @@ interface Props {
   visible?: boolean;
   /** 來自設定的終端機字型大小 */
   fontSize?: number;
+  /** 對話框關閉時由 App 遞增，用來把焦點交還給終端機 */
+  focusSeq?: number;
 }
 
 /**
@@ -37,7 +39,7 @@ async function readClipboard(): Promise<string> {
   }
 }
 
-export function Terminal({ status, launchSeq, onRestart, visible = true, fontSize = 14 }: Props) {
+export function Terminal({ status, launchSeq, onRestart, visible = true, fontSize = 14, focusSeq = 0 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -170,6 +172,17 @@ export function Terminal({ status, launchSeq, onRestart, visible = true, fontSiz
     pm.pty.resize(term.cols, term.rows);
     term.focus();
   }, [visible]);
+
+  const seenFocusSeq = useRef(focusSeq);
+
+  // 對話框關掉後把焦點還給終端機；掛載那次不搶焦點（seq 相同直接跳過）。
+  useEffect(() => {
+    if (seenFocusSeq.current === focusSeq) return;
+    seenFocusSeq.current = focusSeq;
+    const term = termRef.current;
+    if (!term || !visible || status !== 'running') return;
+    term.focus();
+  }, [focusSeq]);
 
   return (
     <div className="term" hidden={!visible}>

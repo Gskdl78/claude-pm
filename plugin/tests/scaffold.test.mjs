@@ -133,7 +133,7 @@ describe('scaffoldProject', () => {
     scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false, vars: { implModel: 'sonnet', reviewModel: 'opus', maxRetries: 5 } });
     const claude = readFileSync(join(target, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('實作 subagent：`sonnet`');
-    expect(claude).toContain('升為 `opus`');
+    expect(claude).toContain('改用 `opus`');
     expect(claude).toContain('審核退回上限 5 次；第 5 次仍不過');
   });
 

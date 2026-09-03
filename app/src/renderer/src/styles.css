@@ -28,7 +28,7 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 
 /* --- sidebar header: root path + new project ------------------------------ */
 .side .side-head > .muted {
-  display: block; padding: 2px 4px 8px; font-size: 12px;
+  display: block; padding: 2px 4px; font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .side .side-head > .muted::before { content: "📁 "; }
@@ -292,7 +292,7 @@ section.center { grid-area: term; display: flex; flex-direction: column; align-i
 .settings input[type="number"] { width: 120px; }
 .settings .check { display: flex; align-items: center; gap: 8px; }
 .settings .muted { font-size: 12px; }
-.side-head { display: flex; align-items: center; gap: 4px; }
+.side-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
 .side-head > .muted { flex: 1; min-width: 0; }
 .gear { background: transparent; border: none; padding: 2px 6px; font-size: 14px; }
 .gear:hover { color: var(--accent); border: none; }

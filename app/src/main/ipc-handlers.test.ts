@@ -241,6 +241,25 @@ describe('ipc handlers', () => {
     await expect(h['config:update']({ root: 'X' } as never)).resolves.toMatchObject({ root: (await h['config:get']()).root });
   });
 
+  it('config:update keeps the cached config when the write fails', async () => {
+    const onConfigChanged = vi.fn();
+    const { base } = setup();
+    // 讓 saveConfig 一定失敗：設定檔的上層「目錄」其實是一個檔案，mkdirSync 會丟錯
+    const blocker = join(base, 'blocker');
+    writeFileSync(blocker, 'not a directory');
+    const h = createHandlers({
+      pluginDir: PLUGIN_DIR, configFile: join(blocker, 'config.json'),
+      pty: new PtyManager((() => { throw new Error('pty unused'); }) as unknown as SpawnFn),
+      send: vi.fn(), checkClaude: async () => ({ ok: true, path: 'x' }), onConfigChanged,
+    });
+    expect(await h['config:get']()).toMatchObject({ implModel: 'opus', termFontSize: 14 });
+    await expect(h['config:update']({ implModel: 'sonnet', termFontSize: 20 })).rejects.toThrow();
+    // 沒寫進磁碟就不能換快取，否則重開後設定會跳回舊值
+    expect(await h['config:get']()).toMatchObject({ implModel: 'opus', termFontSize: 14 });
+    expect(onConfigChanged).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
   it('dialog:pickFolder forwards to the injected picker with the current root', async () => {
     const pickFolder = vi.fn(async () => 'D:\\Chosen');
     const { h, root } = setup({ pickFolder });

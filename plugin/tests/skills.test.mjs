@@ -57,8 +57,10 @@ describe('skill files', () => {
       expect(md, name).toContain('模型政策');
       expect(md, name).toContain('審核退回上限');
       // 預設值仍要看得見，使用者沒改 CLAUDE.md 時才知道會用什麼
-      expect(md, name).toContain('`opus`');
-      expect(md, name).toContain('`fable`');
+      expect(md, name).toContain('（預設 `opus`）');
+      expect(md, name).toContain('（預設 `fable`）');
+      // 但不可寫死成 model `xxx`：model 一律要說「依 CLAUDE.md 的某某模型」
+      expect(md, name).not.toMatch(/model `(opus|fable|sonnet)`/);
       // 退回上限一律用 N 表示，不可寫死次數
       expect(md, name).not.toMatch(/第 \d+ 次 FAIL/);
       expect(md, name).toContain('第 N 次');

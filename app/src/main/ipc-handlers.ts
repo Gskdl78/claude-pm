@@ -70,7 +70,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   let cfg = loadConfig(deps.configFile);
   let watcher: ProjectWatcher | null = null;
 
-  const persist = (next: AppConfig) => { cfg = next; saveConfig(cfg, deps.configFile); deps.onConfigChanged?.(cfg); };
+  // 先寫檔再換快取：寫檔失敗時記憶體裡的設定要維持和磁碟一致。
+  const persist = (next: AppConfig) => { saveConfig(next, deps.configFile); cfg = next; deps.onConfigChanged?.(cfg); };
   const guard = (p: string) => assertInsideRoot(cfg.root, p);
   const modelVars = () => ({ implModel: cfg.implModel, reviewModel: cfg.reviewModel, maxRetries: cfg.maxRetries });
 
