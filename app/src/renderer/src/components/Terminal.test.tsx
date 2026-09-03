@@ -187,4 +187,14 @@ describe('Terminal', () => {
       expect(ptyWrite).not.toHaveBeenCalled();
     });
   });
+
+  it('re-fits, resizes and focuses when it becomes visible again', () => {
+    const { rerender, container } = render(<Terminal status="running" launchSeq={1} onRestart={() => {}} visible={false} />);
+    expect(container.querySelector('.term')).toHaveAttribute('hidden');
+    term.focus.mockClear();
+    rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} visible />);
+    expect(container.querySelector('.term')).not.toHaveAttribute('hidden');
+    expect(term.focus).toHaveBeenCalled();
+    expect((window as unknown as { pm: PmApi }).pm.pty.resize).toHaveBeenCalledWith(80, 24);
+  });
 });
