@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GitBranches, GitDiffMode, GitFileChange, GitResult, GitStatus } from '../shared/types';
+import type { GitBranches, GitDiffMode, GitExtras, GitFileChange, GitResult, GitStatus } from '../shared/types';
 import { formatGitCommand } from '../shared/git-actions';
 
 export const MAX_TEXT = 512 * 1024;
@@ -13,18 +13,17 @@ const BASE_ARGS = ['-c', 'core.quotepath=false', '-c', 'color.ui=never'];
 // LC_ALL=C：錯誤訊息固定英文，錯誤對映表才比得到；GIT_TERMINAL_PROMPT=0：沒有 tty 時不等帳密，直接失敗；
 // GIT_OPTIONAL_LOCKS=0：輪詢 status 不搶 index.lock，不干擾終端機裡的 git。process.env 在呼叫時展開，
 // 測試才能在 beforeAll 設定作者。
-function gitEnv(): NodeJS.ProcessEnv {
+export function gitEnv(): NodeJS.ProcessEnv {
   return { ...process.env, LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
 }
 
-/** 執行 git；永不 reject，結果以 ok / code / stdout / stderr 回報。 */
-export function runGit(dir: string, args: string[]): Promise<GitResult> {
-  const command = formatGitCommand(args);
+/** execFile 共用：永不 reject，spawn 失敗（找不到程式）以 code 127 回報，stderr 附上錯誤訊息。 */
+export function capture(exe: string, argv: string[], dir: string, env: NodeJS.ProcessEnv, command: string): Promise<GitResult> {
   return new Promise((done) => {
     execFile(
-      'git',
-      [...BASE_ARGS, ...args],
-      { cwd: dir, env: gitEnv(), windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+      exe,
+      argv,
+      { cwd: dir, env, windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (!err) { done({ ok: true, code: 0, stdout, stderr, command }); return; }
         const c = (err as { code?: unknown }).code;
@@ -34,6 +33,11 @@ export function runGit(dir: string, args: string[]): Promise<GitResult> {
       },
     );
   });
+}
+
+/** 執行 git；永不 reject，結果以 ok / code / stdout / stderr 回報。 */
+export function runGit(dir: string, args: string[]): Promise<GitResult> {
+  return capture('git', [...BASE_ARGS, ...args], dir, gitEnv(), formatGitCommand(args));
 }
 
 export function isRepo(dir: string): boolean {
@@ -182,4 +186,16 @@ export async function showCommit(dir: string, hash: string): Promise<string> {
   const r = await runGit(dir, ['show', '--stat', '--patch', hash, '--']);
   if (!r.ok) throw new Error(r.stderr);
   return clip(r.stdout);
+}
+
+/** 收藏清單（列序 = stash@{n} 的 n）與標籤（新到舊）；只在「進階」分頁需要時讀。 */
+export async function getExtras(dir: string): Promise<GitExtras> {
+  if (!isRepo(dir)) return { stashes: [], tags: [] };
+  const [st, tg] = await Promise.all([
+    runGit(dir, ['stash', 'list', '--format=%s']),
+    runGit(dir, ['tag', '--list', '--sort=-creatordate']),
+  ]);
+  const stashes = st.ok ? st.stdout.split('\n').filter((l) => l.length > 0).map((message, index) => ({ index, message })) : [];
+  const tags = tg.ok ? tg.stdout.split('\n').map((l) => l.trim()).filter((l) => l.length > 0) : [];
+  return { stashes, tags };
 }

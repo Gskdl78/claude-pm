@@ -28,7 +28,8 @@ export class ProjectWatcher extends EventEmitter {
       // logs/HEAD：commit 與切換；HEAD：切換分支；index：stage / unstage；MERGE_HEAD：合併開始與結束；
       // refs/heads（目錄 mtime）：新增 / 刪除分支；FETCH_HEAD：fetch / pull；packed-refs：gc 後的分支。
       {
-        files: [g('logs', 'HEAD'), g('HEAD'), g('index'), g('MERGE_HEAD'), g('refs', 'heads'), g('FETCH_HEAD'), g('packed-refs')],
+        // refs/tags（目錄 mtime）：建立 / 刪除標籤；refs/stash：收藏的 push / pop / drop
+        files: [g('logs', 'HEAD'), g('HEAD'), g('index'), g('MERGE_HEAD'), g('refs', 'heads'), g('FETCH_HEAD'), g('packed-refs'), g('refs', 'tags'), g('refs', 'stash')],
         event: 'git',
         last: '',
       },
