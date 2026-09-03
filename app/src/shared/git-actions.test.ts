@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RESET_MODES, buildGitArgs, describeGitAction, formatGitCommand } from './git-actions';
+import { RESET_MODES, SYNC_COMMAND, buildGitArgs, describeGitAction, formatGitCommand } from './git-actions';
 import type { GitStatus } from './types';
 
 const status = (over: Partial<GitStatus> = {}): GitStatus => ({
@@ -126,8 +126,9 @@ describe('applyPatch / sync', () => {
     const patch = 'diff --git a/a.txt b/a.txt\n';
     expect(buildGitArgs({ kind: 'applyPatch', patch, reverse: false }, HEAD)).toEqual(['apply', '--cached', '--whitespace=nowarn', '-']);
     expect(buildGitArgs({ kind: 'applyPatch', patch, reverse: true }, HEAD)).toEqual(['apply', '--cached', '-R', '--whitespace=nowarn', '-']);
-    // sync 是多步驟；這裡的 argv 只供顯示
-    expect(buildGitArgs({ kind: 'sync' }, HEAD)).toEqual(['pull', '--rebase']);
+    // sync 是多步驟：沒有單一 argv，回半條指令只會誤導呼叫者
+    expect(() => buildGitArgs({ kind: 'sync' }, HEAD)).toThrow(/syncRepo/);
+    expect(SYNC_COMMAND).toBe('git pull --rebase && git push -u origin HEAD');
   });
   it('needs no confirmation for applyPatch and describes sync exactly', () => {
     expect(describeGitAction({ kind: 'applyPatch', patch: 'diff --git a/a b/a\n', reverse: false }, status())).toBeNull();

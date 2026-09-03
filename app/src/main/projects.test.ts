@@ -140,4 +140,11 @@ describe('cloneProject / assertCloneSource', () => {
       expect(() => assertCloneSource(bad)).toThrow(/invalid clone source/);
     }
   });
+
+  it('assertCloneSource rejects UNC and device paths before touching the filesystem', () => {
+    // statSync 到連不上的 UNC 主機會整個主程序卡住（沒有 timeout 可設），所以先用字串形狀擋掉
+    for (const bad of ['\\\\server\\share\\repo', '\\\\?\\C:\\x', '\\\\.\\pipe\\x', '//server/share/repo']) {
+      expect(() => assertCloneSource(bad)).toThrow(/invalid clone source/);
+    }
+  });
 });

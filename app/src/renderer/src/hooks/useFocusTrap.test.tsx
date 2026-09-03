@@ -35,6 +35,20 @@ describe('useFocusTrap', () => {
     expect(screen.getByRole('button', { name: '一' })).toHaveFocus();
   });
 
+  it('pulls focus back into the container when Tab is pressed with focus on the body', () => {
+    render(<Trap active />);
+    const [first, , last] = screen.getAllByRole('button').slice(1);
+    // 點過遮罩後焦點會落在 <body>：監聽掛在 document 上才收得到這個 Tab
+    (document.activeElement as HTMLElement | null)?.blur();
+    document.body.focus();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(first).toHaveFocus();
+    document.body.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+  });
+
   it('does nothing while inactive', () => {
     render(<Trap active={false} />);
     const outside = screen.getByRole('button', { name: '外面' });

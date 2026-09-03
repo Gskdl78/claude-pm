@@ -831,7 +831,8 @@ describe('App (clone from url)', () => {
     fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
     fireEvent.change(screen.getByLabelText('來源網址或路徑'), { target: { value: 'https://github.com/a/x.git' } });
     fireEvent.click(screen.getByRole('button', { name: '複製' }));
-    expect(await screen.findByText('invalid clone source')).toBeInTheDocument();
+    // 主程序的驗證錯誤是英文，對話框要顯示對映後的中文
+    expect(await screen.findByText('來源必須是 https:// 或 git@ 網址，或本機既存的資料夾路徑。')).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: '新專案' })).toBeInTheDocument();
     expect(api.openProject).not.toHaveBeenCalled();
   });

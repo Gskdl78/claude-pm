@@ -71,4 +71,9 @@ describe('explainGitError (git panel polish)', () => {
     expect(merge).toMatch(/git revert -m 1/);
     expect(explainGitError('error: patch failed: a.txt:1\nerror: a.txt: patch does not apply')).toBe('這段變更已與目前內容不一致，請重新開啟 diff 再試。');
   });
+
+  it('translates the validation errors that reach the UI as plain Error messages', () => {
+    expect(explainGitError('invalid patch')).toBe('這段變更無法組成合法的 patch，請重新開啟 diff 再試。');
+    expect(explainGitError('invalid clone source')).toBe('來源必須是 https:// 或 git@ 網址，或本機既存的資料夾路徑。');
+  });
 });

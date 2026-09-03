@@ -70,6 +70,30 @@ describe('NewProjectDialog clone mode', () => {
     expect(deriveName('')).toBe('');
   });
 
+  it('rejects a malformed source inline before submitting', () => {
+    render(<NewProjectDialog {...props} onClone={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
+    const source = screen.getByLabelText('來源網址或路徑');
+    fireEvent.change(source, { target: { value: 'not a url' } });
+    expect(screen.getByText('網址格式不正確')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '複製' })).toBeDisabled();
+    // UNC 路徑：主程序會拒（stat 會卡住），這裡先擋
+    fireEvent.change(source, { target: { value: '\\\\server\\share\\repo' } });
+    expect(screen.getByText('網址格式不正確')).toBeInTheDocument();
+    fireEvent.change(source, { target: { value: 'C:\\Repos\\local-proj' } });
+    expect(screen.queryByText('網址格式不正確')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '複製' })).toBeEnabled();
+  });
+
+  it('clears a stale error when the mode changes and shows a new one', () => {
+    const { rerender } = render(<NewProjectDialog {...props} error="folder already exists" onClone={() => {}} />);
+    expect(screen.getByText('folder already exists')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
+    expect(screen.queryByText('folder already exists')).not.toBeInTheDocument();
+    rerender(<NewProjectDialog {...props} error="git clone 失敗" onClone={() => {}} />);
+    expect(screen.getByText('git clone 失敗')).toBeInTheDocument();
+  });
+
   it('shows 複製中… while busy in clone mode and keeps create mode untouched', () => {
     const { rerender } = render(<NewProjectDialog {...props} onClone={() => {}} />);
     expect(screen.getByRole('button', { name: '建立' })).toBeInTheDocument();

@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process';
 import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GitBranches, GitDiffMode, GitExtras, GitFileChange, GitResult, GitStatus } from '../shared/types';
-import { formatGitCommand } from '../shared/git-actions';
+import { SYNC_COMMAND, formatGitCommand } from '../shared/git-actions';
+import { MAX_TEXT, TRUNCATED, clip } from '../shared/git-text';
 
-export const MAX_TEXT = 512 * 1024;
-export const TRUNCATED = '\n…（內容過長，已截斷）';
+// 截斷上限與標記改由 shared/git-text.ts 提供（diff-hunks 用同一份精確判斷截斷）；仍從這裡轉出。
+export { MAX_TEXT, TRUNCATED };
 
 // core.quotepath=false：非 ASCII 檔名不轉義；color.ui=never：不出色碼。
 const BASE_ARGS = ['-c', 'core.quotepath=false', '-c', 'color.ui=never'];
@@ -17,9 +18,14 @@ export function gitEnv(): NodeJS.ProcessEnv {
   return { ...process.env, LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
 }
 
+/** 逾時被中止的結果，stderr 以這個開頭；呼叫者據此給出白話訊息。 */
+export const TIMED_OUT = '（已逾時，指令被中止）';
+
 export interface CaptureOptions {
   /** 要寫進子程序 stdin 的內容；寫完即關閉。沒給就不碰 stdin（子程序讀到 EOF）。 */
   input?: string;
+  /** 毫秒；逾時會 kill 子程序，結果為失敗且 stderr 以 TIMED_OUT 開頭。沒給就不限時。 */
+  timeout?: number;
 }
 
 /** execFile 共用：永不 reject，spawn 失敗（找不到程式）以 code 127 回報，stderr 附上錯誤訊息。 */
@@ -28,13 +34,15 @@ export function capture(exe: string, argv: string[], dir: string, env: NodeJS.Pr
     const child = execFile(
       exe,
       argv,
-      { cwd: dir, env, windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+      { cwd: dir, env, windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, ...(opts.timeout ? { timeout: opts.timeout } : {}) },
       (err, stdout, stderr) => {
         if (!err) { done({ ok: true, code: 0, stdout, stderr, command }); return; }
         const c = (err as { code?: unknown }).code;
         const code = typeof c === 'number' ? c : 127;
         const extra = typeof c === 'number' ? '' : `\n${err.message}`;
-        done({ ok: false, code, stdout, stderr: `${stderr}${extra}`.trim(), command });
+        // 逾時：execFile 已 kill 子程序，err.killed 為 true；標記在 stderr 開頭讓呼叫者辨識
+        const killed = (err as { killed?: boolean }).killed === true;
+        done({ ok: false, code, stdout, stderr: killed ? `${TIMED_OUT}\n${stderr}`.trim() : `${stderr}${extra}`.trim(), command });
       },
     );
     if (opts.input !== undefined && child.stdin) {
@@ -50,8 +58,6 @@ export function runGit(dir: string, args: string[], opts: CaptureOptions = {}): 
   return capture('git', [...BASE_ARGS, ...args], dir, gitEnv(), formatGitCommand(args), opts);
 }
 
-const SYNC_COMMAND = 'git pull --rebase && git push -u origin HEAD';
-
 /**
  * 與獨立版 git-panel（git_service.py sync）相同：沒有上游就直接 push -u；
  * 有上游先 pull --rebase 再 push。pull 失敗就停（除了「遠端沒有這個分支」，那表示只差推送）。
@@ -65,7 +71,9 @@ export async function syncRepo(dir: string): Promise<GitResult> {
   return {
     ...push,
     stdout: `${pull.stdout}\n${push.stdout}`.trim(),
-    stderr: `${pull.stderr}\n${push.stderr}`.trim(),
+    // stderr 只留 push 的：pull（fetch）的輸出可能含 [rejected]（例如標籤更新被拒），
+    // 併進來會讓錯誤對映把別的失敗誤判成「推送被拒」。成功時 stderr 不顯示，併了也沒用。
+    stderr: push.stderr,
     command: SYNC_COMMAND,
   };
 }
@@ -164,10 +172,6 @@ export async function getBranches(dir: string): Promise<GitBranches> {
     if (line[0] === '*') current = name;
   }
   return { current, all };
-}
-
-function clip(text: string): string {
-  return text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + TRUNCATED : text;
 }
 
 const UNREADABLE = '（無法讀取檔案）';

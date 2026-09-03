@@ -6,10 +6,12 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { getBranches, getDiff, getExtras, getStatus, hasHead, parseStatus, runGit, showCommit, syncRepo, MAX_TEXT, TRUNCATED } from './git-run';
+import { capture, getBranches, getDiff, getExtras, getStatus, gitEnv, hasHead, parseStatus, runGit, showCommit, syncRepo, MAX_TEXT, TIMED_OUT, TRUNCATED } from './git-run';
 import { buildHunkPatch, splitHunks } from '../shared/diff-hunks';
+import { explainGitError, gitResultText, isPushRejected } from '../shared/git-errors';
+import { assertPatch } from '../shared/git-validate';
 
 beforeAll(() => {
   Object.assign(process.env, {
@@ -204,6 +206,23 @@ describe('runGit with stdin / syncRepo', () => {
     expect(unstaged).not.toContain('+second-change');
   });
 
+  it('stages a hunk whose content lines look like patch headers (real git, real repo)', async () => {
+    const dir = repo();
+    // 刪掉 `-- header comment` 會產生內容行 `--- header comment`：assertPatch 只驗檔頭才過得了
+    const base = ['-- header comment', 'select 1;', ...Array.from({ length: 20 }, (_, i) => `-- line${i}`)].join('\n') + '\n';
+    commit(dir, 'schema.sql', base);
+    writeFileSync(join(dir, 'schema.sql'), base.replace('-- header comment\n', ''));
+    const parsed = splitHunks((await runGit(dir, ['diff', '--', 'schema.sql'])).stdout);
+    expect(parsed.truncated).toBe(false);
+    expect(parsed.hunks).toHaveLength(1);
+    const patch = buildHunkPatch(parsed, 0);
+    expect(patch).toContain('--- header comment');
+    expect(assertPatch(patch)).toBe(patch);
+    const r = await runGit(dir, ['apply', '--cached', '--whitespace=nowarn', '-'], { input: patch });
+    expect(r).toMatchObject({ ok: true });
+    expect((await runGit(dir, ['diff', '--cached', '--', 'schema.sql'])).stdout).toContain('--- header comment');
+  });
+
   it('syncRepo pushes directly when there is no upstream and reports the push failure without a remote', async () => {
     const dir = repo();
     commit(dir, 'a.txt', 'one');
@@ -233,5 +252,40 @@ describe('runGit with stdin / syncRepo', () => {
     expect(git(dir, 'log', '--format=%s')).toMatch(/from remote/);
     expect(git(bare, 'log', '--format=%s', 'main')).toMatch(/from local/);
     expect((await getStatus(dir))).toMatchObject({ ahead: 0, behind: 0 });
+  });
+
+  it('syncRepo classifies on the push result alone and keeps pull output out of stderr', async () => {
+    const dir = repo();
+    commit(dir, 'a.txt', 'one');
+    const bare = mkdtempSync(join(tmpdir(), 'pm-bare-'));
+    git(bare, 'init', '--bare', '-b', 'main');
+    git(dir, 'remote', 'add', 'origin', bare);
+    git(dir, 'push', '-q', '-u', 'origin', 'main');
+    const other = mkdtempSync(join(tmpdir(), 'pm-other-'));
+    git(other, 'clone', '-q', bare, '.');
+    commit(other, 'remote.txt', 'from remote');
+    git(other, 'push', '-q', 'origin', 'main');
+    commit(dir, 'local.txt', 'from local');
+    // pull 走得通（fetch 的 From … 會印到 stderr），push 走不通：pull 的輸出不可併進來，否則
+    // fetch 行裡的 [rejected] 之類字樣會讓錯誤對映把別的失敗誤判成「推送被拒」
+    git(dir, 'remote', 'set-url', '--push', 'origin', join(tmpdir(), 'pm-missing-remote'));
+
+    const r = await syncRepo(dir);
+    expect(r.ok).toBe(false);
+    expect(r.command).toBe('git pull --rebase && git push -u origin HEAD');
+    expect(r.stderr).toMatch(/does not appear to be a git repository/);
+    // pull（fetch）的 "From <bare>" 與變基訊息都不該出現在 stderr 裡
+    expect(r.stderr).not.toMatch(/^From /m);
+    expect(r.stderr).not.toContain(basename(bare));
+    expect(r.stderr).not.toMatch(/rebase/i);
+    expect(isPushRejected(gitResultText(r))).toBe(false);
+    expect(explainGitError(gitResultText(r))).toMatch(/找不到遠端倉庫/);
+  });
+
+  it('capture kills a child that outlives its timeout and marks the result', async () => {
+    const dir = repo();
+    const r = await capture(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], dir, gitEnv(), 'node sleep', { timeout: 200 });
+    expect(r.ok).toBe(false);
+    expect(r.stderr.startsWith(TIMED_OUT)).toBe(true);
   });
 });

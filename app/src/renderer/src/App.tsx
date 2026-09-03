@@ -12,6 +12,7 @@ import type { SessionState } from './components/Terminal';
 import { SessionLimitDialog } from './components/SessionLimitDialog';
 import { isDocRelPath } from '../../shared/docs-path';
 import { errorMessage } from './errors';
+import { explainGitError } from '../../shared/git-errors';
 import { ClaudeMissing } from './components/ClaudeMissing';
 import { SettingsDialog, type SettingsSubmit } from './components/SettingsDialog';
 
@@ -286,7 +287,9 @@ export default function App() {
       setDialogOpen(false);
       await openProject(info);
     } catch (e) {
-      setDialogError(errorMessage(e));
+      // git clone 與來源驗證的錯誤都是英文（invalid clone source…），先過錯誤對映表
+      const text = errorMessage(e);
+      setDialogError(explainGitError(text) ?? text);
     } finally {
       setDialogBusy(false);
     }

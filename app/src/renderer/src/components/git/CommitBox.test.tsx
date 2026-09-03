@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CommitBox } from './CommitBox';
+import { COMMIT_PREFIXES } from '../../../../shared/commit-prefix';
 
 /** CommitBox 的輸入由上層保管，測試用這個小殼提供狀態。 */
 function Host(props: { busy: boolean; stagedCount: number; noCommits: boolean; onCommit: (m: string, a: boolean) => void }) {
@@ -72,7 +73,12 @@ describe('CommitBox prefix row', () => {
     fireEvent.click(screen.getByRole('button', { name: 'test:' }));
     expect(onMessageChange).toHaveBeenLastCalledWith('test: add login');
 
-    rerender(<CommitBox busy stagedCount={1} noCommits={false} stage={null} message=""
+    // 沒有 state（stage 為 null）：不高亮任何前綴，但按鈕仍可用
+    rerender(<CommitBox busy={false} stagedCount={1} noCommits={false} stage={null} message=""
+      amend={false} onMessageChange={onMessageChange} onAmendChange={() => {}} onCommit={() => {}} />);
+    for (const p of COMMIT_PREFIXES) expect(screen.getByRole('button', { name: p.trim() })).not.toHaveClass('primary');
+
+    rerender(<CommitBox busy stagedCount={1} noCommits={false} stage="build" message=""
       amend={false} onMessageChange={onMessageChange} onAmendChange={() => {}} onCommit={() => {}} />);
     expect(screen.getByRole('button', { name: 'feat:' })).toHaveClass('primary');
     expect(screen.getByRole('button', { name: 'feat:' })).toBeDisabled();

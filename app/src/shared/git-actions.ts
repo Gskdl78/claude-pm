@@ -18,6 +18,9 @@ export const RESET_MODES: Record<GitResetMode, string> = {
   hard: '完全丟棄！檔案內容也會退回，之後的變更全部消失',
 };
 
+/** 同步是多步驟（pull --rebase → push），由主程序的 syncRepo 執行；顯示與結果都用這一份字串。 */
+export const SYNC_COMMAND = 'git pull --rebase && git push -u origin HEAD';
+
 /** 動作 → git argv。renderer 用它預覽指令，主程序用同一份執行，保證兩者一致。 */
 export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
   switch (a.kind) {
@@ -48,8 +51,8 @@ export function buildGitArgs(a: GitAction, ctx: GitActionContext): string[] {
     case 'addRemote': return ['remote', 'add', 'origin', a.url];
     case 'commitPaths': return ['commit', '-m', a.message, '--', ...a.paths];
     case 'applyPatch': return ['apply', '--cached', ...(a.reverse ? ['-R'] : []), '--whitespace=nowarn', '-'];
-    // sync 是多步驟（pull --rebase → push），主程序用 syncRepo 執行；這裡的 argv 只供顯示
-    case 'sync': return ['pull', '--rebase'];
+    // sync 沒有單一 argv：主程序走 syncRepo，顯示用 SYNC_COMMAND。回半條指令只會誤導呼叫者
+    case 'sync': throw new Error('sync is executed by syncRepo');
   }
 }
 

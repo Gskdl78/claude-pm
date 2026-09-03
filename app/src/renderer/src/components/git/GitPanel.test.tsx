@@ -397,6 +397,8 @@ describe('GitPanel (git panel polish)', () => {
     }));
     expect(screen.queryByText(/^確認：/)).not.toBeInTheDocument();
     await waitFor(() => expect(git.diff.mock.calls.length).toBeGreaterThan(diffCalls));
+    // 重讀的必須是同一個檔案與同一種 diff，否則會拿別份內容覆蓋 viewer
+    expect(git.diff).toHaveBeenLastCalledWith(P, 'a.txt', 'unstaged');
     // 重讀回空字串（沒有剩餘差異）→ 關閉 diff 視窗
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '差異：a.txt' })).not.toBeInTheDocument());
     expect(screen.getByText('> git applyPatch')).toBeInTheDocument();
@@ -414,6 +416,7 @@ describe('GitPanel (git panel polish)', () => {
     await waitFor(() => expect(git.run).toHaveBeenCalledWith(P, expect.objectContaining({ kind: 'applyPatch', reverse: true })));
     await waitFor(() => expect(within(dialog).getAllByRole('button', { name: '取消暫存此段' })).toHaveLength(1));
     expect(screen.getByRole('dialog', { name: '差異：a.txt' })).toBeInTheDocument();
+    expect(git.diff).toHaveBeenLastCalledWith(P, 'a.txt', 'staged');
   });
 
   it('runs sync after a confirmation that names the full command', async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitAction, GitBranches, GitCommit, GitDiffMode, GitExtras, GitResult, GitStatus, Notice, PublishChoice, StageName } from '../../../../shared/types';
-import { buildGitArgs, describeGitAction, formatGitCommand } from '../../../../shared/git-actions';
+import { SYNC_COMMAND, buildGitArgs, describeGitAction, formatGitCommand } from '../../../../shared/git-actions';
 import { explainGitError, gitResultText, isPushRejected } from '../../../../shared/git-errors';
 import { buildHunkPatch, splitHunks } from '../../../../shared/diff-hunks';
 import { describePublish } from '../../../../shared/gh-actions';
@@ -29,8 +29,6 @@ const EMPTY_BRANCHES: GitBranches = { current: '', all: [] };
 const EMPTY_EXTRAS: GitExtras = { stashes: [], tags: [] };
 // 沒有提示時共用同一個陣列，避免每次 render 都產生新的參考而重跑 effect
 const NO_NOTICES: Notice[] = [];
-/** 同步是多步驟，buildGitArgs 只給得出第一步；確認框要顯示主程序 syncRepo 實際會跑的整串指令 */
-const SYNC_COMMAND = 'git pull --rebase && git push -u origin HEAD';
 
 interface Props {
   path: string | null;
@@ -217,6 +215,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
     if (!status || busy) return;
     const spec = describeGitAction(action, status);
     if (!spec) { void execute(action); return; }
+    // 同步是多步驟，buildGitArgs 沒有單一 argv；確認框顯示主程序 syncRepo 實際會跑的整串指令
     const command = action.kind === 'sync' ? SYNC_COMMAND : formatGitCommand(buildGitArgs(action, { hasHead: !status.noCommits }));
     setPending({ request: { ...spec, command }, action });
   }, [status, busy, execute]);
@@ -240,7 +239,9 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaul
       }
     } catch (e) {
       if (pathRef.current !== path) return;
-      log('error', errorMessage(e));
+      // 主程序的驗證錯誤（invalid patch…）是英文 Error，先過錯誤對映表再寫進輸出區
+      const text = errorMessage(e);
+      log('error', explainGitError(text) ?? text);
     } finally {
       setBusy(false);
       if (pathRef.current === path) { setActionSeq((n) => n + 1); void refresh(); }
