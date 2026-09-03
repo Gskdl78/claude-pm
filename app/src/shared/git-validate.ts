@@ -8,8 +8,8 @@ export const DIFF_MODES: readonly GitDiffMode[] = ['staged', 'unstaged', 'untrac
 export const RESET_MODES_LIST: readonly GitResetMode[] = ['soft', 'mixed', 'hard'];
 /** HEAD~1–HEAD~999 或 hash；不收分支名，reset 的目標永遠不會像選項或任意字串。 */
 export const RESET_TARGET_RE = /^(?:HEAD~[1-9]\d{0,2}|[0-9a-fA-F]{4,40})$/;
-/** 只收 https:// 與 git@host:owner/repo(.git)：拒絕空白、控制字元、; 與內嵌帳密。 */
-export const REMOTE_URL_RE = /^(?:https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._\/-]+|git@[A-Za-z0-9.-]+:[A-Za-z0-9._\/-]+)$/;
+/** 只收 https:// 與 git@host:owner/repo(.git)：拒絕空白、控制字元、; 與內嵌帳密；git@ 的 host 不可以 - 開頭（避免被當成選項）。 */
+export const REMOTE_URL_RE = /^(?:https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._\/-]+|git@(?!-)[A-Za-z0-9.-]+:[A-Za-z0-9._\/-]+)$/;
 export const MAX_URL = 2048;
 /** 核定的 [A-Za-z0-9._-]{1,100} 再拒絕 - 開頭：名稱是 gh repo create 的位置參數。 */
 export const REPO_NAME_RE = /^(?!-)[A-Za-z0-9._-]{1,100}$/;
@@ -90,9 +90,14 @@ export function assertRemoteUrl(v: unknown): string {
   return u;
 }
 
+/** REPO_NAME_RE 再拒絕 . 與 ..（避免被當成目前 / 上層目錄）；wizard 用來即時驗證輸入。 */
+export function isValidRepoName(name: string): boolean {
+  return REPO_NAME_RE.test(name) && name !== '.' && name !== '..';
+}
+
 export function assertRepoName(v: unknown): string {
   const n = str(v, 'repo name');
-  if (!REPO_NAME_RE.test(n) || n === '.' || n === '..') throw new Error('invalid repo name');
+  if (!isValidRepoName(n)) throw new Error('invalid repo name');
   return n;
 }
 

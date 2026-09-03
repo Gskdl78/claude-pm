@@ -1,6 +1,6 @@
 import type { GitExtras, GitResetMode, GitStatus } from '../../../../shared/types';
 import { RESET_MODES } from '../../../../shared/git-actions';
-import { BRANCH_RE, RESET_MODES_LIST, RESET_TARGET_RE } from '../../../../shared/git-validate';
+import { BRANCH_RE, MAX_STASH_MESSAGE, RESET_MODES_LIST, RESET_TARGET_RE } from '../../../../shared/git-validate';
 
 export interface AdvancedForm {
   stashMessage: string;
@@ -44,7 +44,7 @@ export function AdvancedTab({ status, extras, busy, form, onFormChange, onStash,
       <section>
         <h4>收藏（stash）</h4>
         <div className="row">
-          <input aria-label="收藏說明（選填）" placeholder="收藏說明（選填）" value={form.stashMessage} disabled={lock}
+          <input aria-label="收藏說明（選填）" placeholder="收藏說明（選填）" value={form.stashMessage} disabled={lock} maxLength={MAX_STASH_MESSAGE}
             onChange={(e) => set({ stashMessage: e.target.value })} />
           <button type="button" disabled={lock || !hasChanges} onClick={() => onStash(form.stashMessage.trim() || null)}>收藏目前變更</button>
         </div>

@@ -30,9 +30,9 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 
 右欄（360px）是內建的 git 面板：上方是分支狀態與「推送 / 拉取 / 擷取」，中間是「變更 / 分支 / 歷史 / 進階」四個分頁，下方是輸出區。
 
-- 每個會改變狀態的按鈕都先彈出確認框，顯示白話說明與將執行的確切 git 指令；會丟失工作的操作（丟棄、修改上一次提交）以紅色危險樣式呈現，焦點預設在「取消」。
+- 每個會改變狀態的按鈕都先彈出確認框，顯示白話說明與將執行的確切 git 指令；會丟失工作的操作（丟棄、amend、hard reset、stash 丟棄、刪除標籤、中止合併）以紅色危險樣式呈現，焦點預設在「取消」。
 - git 失敗時輸出區顯示繁體中文說明並附原始輸出；對映表在 `src/shared/git-errors.ts`。
-- 面板在每次動作後、`.git` 有變化時（500ms 輪詢 `logs/HEAD`、`HEAD`、`index`、`MERGE_HEAD`、`refs/heads`、`FETCH_HEAD`、`packed-refs`）以及每 3 秒（視窗可見時）重讀狀態，所以終端機裡 Claude Code 的 git 操作與檔案編輯都會反映在面板。
+- 面板在每次動作後、`.git` 有變化時（500ms 輪詢 `logs/HEAD`、`HEAD`、`index`、`MERGE_HEAD`、`refs/heads`、`FETCH_HEAD`、`packed-refs`、`refs/tags`、`refs/stash`）以及每 3 秒（視窗可見時）重讀狀態，所以終端機裡 Claude Code 的 git 操作與檔案編輯都會反映在面板。
 - 「進階」分頁：收藏（`git stash push -u`，可附說明；清單可「取回」或「丟棄」）、重設（soft / mixed / hard 到 `HEAD~n` 或 hash；hard 為紅色危險確認）、標籤（建立於 HEAD 或指定提交、刪除、列表）。「歷史」分頁每筆 commit 有「還原 / 重設到此 / 標籤」；合併中的衝突橫幅有「中止合併」。
 - 尚未設定遠端時按「推送 / 拉取」會開啟「發佈到 GitHub」精靈：偵測 GitHub CLI（`gh --version`、`gh auth status`）後可選「新建 GitHub 倉庫」（`gh repo create <名稱> --private|--public --source=. --remote=origin --push`）或「貼現有倉庫網址」（`git remote add origin <網址>` + `git push -u origin HEAD`；只接受 `https://` 或 `git@主機:帳號/倉庫`）。推送被拒時面板提示「先擷取」或「拉取（變基）」，不提供強制推送。
 - `gh` 與 git 一樣在主程序以 `execFile` 執行，argv 只有三種白名單；倉庫名稱與網址都先驗證。

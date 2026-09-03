@@ -61,6 +61,7 @@ export function GitPanel({ path, commits, revision }: Props) {
   // 每次面板動作結束 +1，讓「進階」分頁重讀收藏與標籤
   const [actionSeq, setActionSeq] = useState(0);
   const seqRef = useRef(0);
+  const extrasSeqRef = useRef(0);
   const statusErrorRef = useRef<string | null>(null);
   const pathRef = useRef(path);
   const [logHeight, setLogHeight] = useLogHeight();
@@ -117,12 +118,16 @@ export function GitPanel({ path, commits, revision }: Props) {
   // 收藏與標籤只在「進階」分頁顯示：分頁開啟、watcher 事件（revision）或面板動作（actionSeq）後重讀，不跟著 3 秒輪詢
   const refreshExtras = useCallback(async () => {
     if (!path) return;
+    extrasSeqRef.current += 1;
+    const seq = extrasSeqRef.current;
     try {
       const ex = await pm.git.extras(path);
-      if (pathRef.current !== path) return;
+      // 被更新的 refreshExtras 或專案切換取代的結果一律丟棄
+      if (seq !== extrasSeqRef.current || pathRef.current !== path) return;
       setExtras((prev) => (JSON.stringify(prev) === JSON.stringify(ex) ? prev : ex));
     } catch (e) {
-      if (pathRef.current === path) log('error', `讀取收藏與標籤失敗：${errorMessage(e)}`);
+      if (seq !== extrasSeqRef.current || pathRef.current !== path) return;
+      log('error', `讀取收藏與標籤失敗：${errorMessage(e)}`);
     }
   }, [path, log]);
 

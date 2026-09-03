@@ -1,6 +1,6 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { GhCheck, PublishChoice } from '../../../../shared/types';
-import { REMOTE_URL_RE, REPO_NAME_RE } from '../../../../shared/git-validate';
+import { REMOTE_URL_RE, isValidRepoName } from '../../../../shared/git-validate';
 import { pm } from '../../api';
 import { errorMessage } from '../../errors';
 
@@ -19,7 +19,7 @@ export const URL_HINT = '網址不合法：只接受 https://主機/帳號/倉�
 /** 資料夾名稱當預設倉庫名；不合法（中文、空白…）就留白讓使用者填。 */
 export function defaultRepoName(path: string): string {
   const base = path.split(/[\\/]/).filter((s) => s.length > 0).pop() ?? '';
-  return REPO_NAME_RE.test(base) ? base : '';
+  return isValidRepoName(base) ? base : '';
 }
 
 export function PublishWizard({ path, noCommits, busy, onSubmit, onCancel }: Props) {
@@ -43,7 +43,7 @@ export function PublishWizard({ path, noCommits, busy, onSubmit, onCancel }: Pro
   const canCreate = check !== null && check.installed && check.authed;
   // 使用者沒選之前：能用 gh 就預設新建，否則預設貼網址
   const effectiveMode = mode ?? (canCreate ? 'create' : 'url');
-  const nameValid = REPO_NAME_RE.test(name);
+  const nameValid = isValidRepoName(name);
   const urlValid = REMOTE_URL_RE.test(url);
   const ready = !busy && !noCommits && (effectiveMode === 'create' ? canCreate && nameValid : urlValid);
   const submit = () => {

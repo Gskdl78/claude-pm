@@ -105,7 +105,8 @@ describe('batch-2 validators', () => {
     const good = ['https://github.com/o/r.git', 'https://github.com/o/r', 'https://gitlab.example.com:8443/group/sub/r.git', 'git@github.com:o/r.git', 'git@github.com:o/r'];
     for (const u of good) expect(assertRemoteUrl(u)).toBe(u);
     const bad: unknown[] = ['', 'http://github.com/o/r', 'ssh://git@github.com/o/r', 'github.com/o/r', 'https://github.com/o/r x', 'https://github.com/o/r\n',
-      'https://user:pw@github.com/o/r', '--upload-pack=calc', 'ext::sh -c calc', 'file:///C:/x', 'git@github.com:o/r;calc', `https://github.com/o/${'r'.repeat(2048)}`, 5];
+      'https://user:pw@github.com/o/r', '--upload-pack=calc', 'ext::sh -c calc', 'file:///C:/x', 'git@github.com:o/r;calc', `https://github.com/o/${'r'.repeat(2048)}`,
+      'git@-oProxyCommand=x:a/b', 5];
     for (const u of bad) expect(() => assertRemoteUrl(u)).toThrow(/invalid remote url/);
   });
 

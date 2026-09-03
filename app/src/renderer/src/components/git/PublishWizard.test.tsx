@@ -29,6 +29,8 @@ describe('PublishWizard', () => {
     fireEvent.change(screen.getByLabelText('倉庫名稱'), { target: { value: '-bad' } });
     expect(screen.getByText(/名稱不合法/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '下一步' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('倉庫名稱'), { target: { value: '.' } });
+    expect(screen.getByRole('button', { name: '下一步' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('倉庫名稱'), { target: { value: 'my-app' } });
     fireEvent.click(screen.getByLabelText('公開'));
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
