@@ -11,6 +11,8 @@ interface Props {
   onRestart: () => void;
   /** 文件分頁時為 false，元件仍掛載 */
   visible?: boolean;
+  /** 來自設定的終端機字型大小 */
+  fontSize?: number;
 }
 
 /**
@@ -35,16 +37,18 @@ async function readClipboard(): Promise<string> {
   }
 }
 
-export function Terminal({ status, launchSeq, onRestart, visible = true }: Props) {
+export function Terminal({ status, launchSeq, onRestart, visible = true, fontSize = 14 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // 建立 xterm 時只要初始值，用 ref 保存避免掛載 effect 依賴 fontSize
+  const fontSizeRef = useRef(fontSize);
 
   useEffect(() => {
     if (!host.current) return;
     const term = new XTerm({
       fontFamily: 'Cascadia Mono, Consolas, monospace',
-      fontSize: 14,
+      fontSize: fontSizeRef.current,
       cursorBlink: true,
       allowProposedApi: true,
       theme: { background: '#1e1e1e' },
@@ -119,6 +123,19 @@ export function Terminal({ status, launchSeq, onRestart, visible = true }: Props
       fitRef.current = null;
     };
   }, []);
+
+  // 設定改字級：改 xterm 選項後重新 fit 並告訴 pty 新尺寸
+  useEffect(() => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return;
+    term.options.fontSize = fontSize;
+    // 掛載時 xterm 已用同一個字級建立，尺寸交給下面的 [status, launchSeq] effect
+    if (fontSizeRef.current === fontSize) return;
+    fontSizeRef.current = fontSize;
+    fit.fit();
+    pm.pty.resize(term.cols, term.rows);
+  }, [fontSize]);
 
   const seenSeq = useRef(launchSeq);
 

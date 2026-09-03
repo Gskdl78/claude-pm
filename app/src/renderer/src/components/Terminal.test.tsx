@@ -8,6 +8,7 @@ let keyHandler: KeyHandler = () => true;
 const term = {
   cols: 80,
   rows: 24,
+  options: {} as Record<string, unknown>,
   loadAddon: vi.fn(),
   open: vi.fn(),
   write: vi.fn(),
@@ -207,5 +208,14 @@ describe('Terminal', () => {
     render(<Terminal status="idle" launchSeq={0} onRestart={() => {}} />);
     expect(term.focus).not.toHaveBeenCalled();
     expect(resize).not.toHaveBeenCalled();
+  });
+
+  it('applies fontSize changes to xterm and refits', () => {
+    const { rerender } = render(<Terminal status="running" launchSeq={1} onRestart={() => {}} fontSize={14} />);
+    expect(term.options.fontSize).toBe(14);
+    (window as unknown as { pm: PmApi }).pm.pty.resize = vi.fn();
+    rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} fontSize={18} />);
+    expect(term.options.fontSize).toBe(18);
+    expect((window as unknown as { pm: PmApi }).pm.pty.resize).toHaveBeenCalledWith(80, 24);
   });
 });
