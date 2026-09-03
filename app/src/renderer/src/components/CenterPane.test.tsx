@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 vi.mock('./Terminal', () => ({
-  Terminal: ({ visible }: { visible: boolean }) => <div data-testid="terminal" hidden={!visible}>term</div>,
+  TerminalHost: ({ visible, currentPath }: { visible: boolean; currentPath: string | null }) => (
+    <div data-testid="terminal" data-current={currentPath ?? ''} hidden={!visible}>term</div>
+  ),
 }));
 vi.mock('./docs/DocsTab', () => ({
   DocsTab: ({ hidden, selected }: { hidden: boolean; selected: string | null }) => <div data-testid="docs" hidden={hidden}>{selected ?? 'none'}</div>,
@@ -14,7 +16,7 @@ vi.mock('./insights/InsightsView', () => ({
 import { CenterPane, type CenterTab } from './CenterPane';
 
 const el = (tab: CenterTab, onTab: (t: CenterTab) => void) => (
-  <CenterPane tab={tab} onTab={onTab} status="running" launchSeq={0} onRestart={() => {}}
+  <CenterPane tab={tab} onTab={onTab} sessions={{}} currentPath={'C:\\P\\a'} onRestart={() => {}}
     path={'C:\\P\\a'} stageDocs={[]} selectedDoc="docs/product/prd.md" onSelectDoc={() => {}} docsRevision={0} onNotice={() => {}}
     insightsRevision={0} onRevealCommit={() => {}} />
 );

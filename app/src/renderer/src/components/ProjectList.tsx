@@ -3,13 +3,17 @@ import { STAGE_LABELS, type ProjectInfo } from '../../../shared/types';
 interface Props {
   projects: ProjectInfo[];
   currentPath: string | null;
-  /** Claude Code 正在等這個專案的使用者輸入（只有目前專案會有 pty） */
-  waitingPath?: string | null;
+  /** 有 pty session 活著的專案 */
+  livePaths: ReadonlySet<string>;
+  /** Claude Code 正在等使用者輸入的專案 */
+  waitingPaths: ReadonlySet<string>;
   onSelect: (p: ProjectInfo) => void;
   onInit: (p: ProjectInfo) => void;
   onNew: () => void;
   /** 打開跨專案洞察分頁 */
   onInsights: () => void;
+  /** 關掉這個專案的 session（不切換專案） */
+  onCloseSession: (p: ProjectInfo) => void;
 }
 
 // The leading dot keeps the pill text distinct from the StagePanel chips, so a
@@ -22,7 +26,7 @@ function stagePill(p: ProjectInfo) {
   return <span className={`pill ${s.stages[s.stage].status}`}>{`● ${STAGE_LABELS[s.stage]}`}</span>;
 }
 
-export function ProjectList({ projects, currentPath, waitingPath = null, onSelect, onInit, onNew, onInsights }: Props) {
+export function ProjectList({ projects, currentPath, livePaths, waitingPaths, onSelect, onInit, onNew, onInsights, onCloseSession }: Props) {
   return (
     <div className="projects">
       <button className="new-project" onClick={onNew}>+ 新專案</button>
@@ -42,7 +46,12 @@ export function ProjectList({ projects, currentPath, waitingPath = null, onSelec
                 <button className="ghost" onClick={(e) => { e.stopPropagation(); onInit(p); }}>初始化</button>
               </>
             )}
-            {p.path === waitingPath && <span className="pill waiting">● 等待回覆</span>}
+            {waitingPaths.has(p.path)
+              ? <span className="pill waiting">● 等待回覆</span>
+              : livePaths.has(p.path) && <span className="pill live">● 執行中</span>}
+            {livePaths.has(p.path) && (
+              <button className="ghost close-session" aria-label="關閉 session" title="關閉 session" onClick={(e) => { e.stopPropagation(); onCloseSession(p); }}>×</button>
+            )}
           </span>
         </div>
       ))}

@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHandlers, type HandlerDeps } from './ipc-handlers';
-import { PtyManager, type SpawnFn } from './pty';
+import { SessionManager, type SpawnFn } from './pty';
 
 const PLUGIN_DIR = resolve(__dirname, '../../../plugin');
 
@@ -14,29 +14,32 @@ beforeAll(() => {
   });
 });
 
-function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged' | 'pinnedFile'>> = {}) {
+function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'onFocusChanged' | 'watchIntervalMs' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged' | 'pinnedFile'>> = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
   const configFile = join(base, 'config.json');
   writeFileSync(configFile, JSON.stringify({ root, lastProject: null, recent: [] }));
   const spawnCalls: Array<{ file: string; args: string[]; cwd: string; cols: number; rows: number }> = [];
-  const writes: unknown[] = [];
+  // 每個 proc 都往同一個陣列記錄，第一欄是它的 cwd：可驗證輸入被送到正確的 session
+  const writes: Array<[string, unknown]> = [];
   const resizes: Array<[unknown, unknown]> = [];
+  // 被終止的行程；用來驗證 config:setRoot 真的收掉了舊 root 的 session
+  const kills: string[] = [];
   const spawn: SpawnFn = (file, args, opts) => {
     spawnCalls.push({ file, args, cwd: opts.cwd, cols: opts.cols, rows: opts.rows });
     return {
-      onData() {}, onExit() {}, kill() {},
-      write(d) { writes.push(d); },
+      onData() {}, onExit() {}, kill() { kills.push(opts.cwd); },
+      write(d) { writes.push([opts.cwd, d]); },
       resize(c, r) { resizes.push([c, r]); },
     };
   };
-  const pty = new PtyManager(spawn);
+  const pty = new SessionManager(spawn);
   const send = vi.fn();
   const openPath = vi.fn(async () => '');
   // 釘選檔一定要落在暫存目錄裡，測試不可寫到真實家目錄。
-  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), pinnedFile: join(base, 'pinned-notes.md'), ...extra });
-  return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes };
+  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), pinnedFile: join(base, 'pinned-notes.md'), watchIntervalMs: 30, ...extra });
+  return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes, kills };
 }
 
 describe('ipc handlers', () => {
@@ -46,6 +49,24 @@ describe('ipc handlers', () => {
     await expect(h['config:setRoot'](join(base, 'missing'))).rejects.toThrow(/root not found/);
     const other = join(base, 'other'); mkdirSync(other);
     expect((await h['config:setRoot'](other)).root).toBe(other);
+  });
+
+  it('config:setRoot kills every session before the new root makes them unreachable', async () => {
+    const onSessionEnd = vi.fn();
+    const onFocusChanged = vi.fn();
+    const { h, base, kills } = setup({ onSessionEnd, onFocusChanged });
+    const created = await h['projects:create']('demo');
+    await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
+    expect((await h['pty:list']()).map((s) => s.path)).toEqual([created.path]);
+
+    const other = join(base, 'other'); mkdirSync(other);
+    await h['config:setRoot'](other);
+    // 換根目錄之後 renderer 再也殺不掉舊路徑，所以主行程必須自己收乾淨
+    expect(await h['pty:list']()).toEqual([]);
+    expect(kills).toEqual([created.path]);
+    expect(onSessionEnd).toHaveBeenCalledWith(created.path);
+    expect(onFocusChanged).toHaveBeenLastCalledWith(null);
+    h.dispose();
   });
 
   it('create → list → open remembers project and starts pty with /stage-env', async () => {
@@ -127,15 +148,15 @@ describe('ipc handlers', () => {
     const p = await h['projects:create']('io');
     await h['pty:start'](p.path, { continue: true, cols: 80, rows: 24 });
 
-    h['pty:write']('ok');
-    h['pty:write'](123 as unknown as string);
-    h['pty:write'](undefined as unknown as string);
-    expect(writes).toEqual(['ok']);
+    h['pty:write'](p.path, 'ok');
+    h['pty:write'](p.path, 123 as unknown as string);
+    h['pty:write'](p.path, undefined as unknown as string);
+    expect(writes).toEqual([[p.path, 'ok']]);
 
-    h['pty:resize'](10, 20);
-    h['pty:resize'](Number.POSITIVE_INFINITY, 20);
-    h['pty:resize'](10, Number.NaN);
-    h['pty:resize']('10' as unknown as number, 20);
+    h['pty:resize'](p.path, 10, 20);
+    h['pty:resize'](p.path, Number.POSITIVE_INFINITY, 20);
+    h['pty:resize'](p.path, 10, Number.NaN);
+    h['pty:resize'](p.path, '10' as unknown as number, 20);
     expect(resizes).toEqual([[10, 20]]);
   });
 
@@ -183,7 +204,7 @@ describe('ipc handlers', () => {
     const onSessionStart = vi.fn();
     const onSessionEnd = vi.fn();
     const throwing: SpawnFn = () => { throw new Error('spawn failed'); };
-    const { h } = setup({ onSessionStart, onSessionEnd, pty: new PtyManager(throwing) });
+    const { h } = setup({ onSessionStart, onSessionEnd, pty: new SessionManager(throwing) });
     const created = await h['projects:create']('broken');
     await expect(h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 })).rejects.toThrow(/spawn failed/);
     expect(onSessionStart).not.toHaveBeenCalled();
@@ -196,8 +217,8 @@ describe('ipc handlers', () => {
     const { h } = setup({ onSessionEnd });
     const created = await h['projects:create']('killed');
     await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
-    await h['pty:kill']();
-    expect(onSessionEnd).toHaveBeenCalledTimes(1);
+    await h['pty:kill'](created.path);
+    expect(onSessionEnd).toHaveBeenCalledWith(created.path);
   });
 
   it('shell:openExternal only accepts http(s) and mailto', async () => {
@@ -250,7 +271,7 @@ describe('ipc handlers', () => {
     writeFileSync(blocker, 'not a directory');
     const h = createHandlers({
       pluginDir: PLUGIN_DIR, configFile: join(blocker, 'config.json'),
-      pty: new PtyManager((() => { throw new Error('pty unused'); }) as unknown as SpawnFn),
+      pty: new SessionManager((() => { throw new Error('pty unused'); }) as unknown as SpawnFn),
       send: vi.fn(), checkClaude: async () => ({ ok: true, path: 'x' }), onConfigChanged,
     });
     expect(await h['config:get']()).toMatchObject({ implModel: 'opus', termFontSize: 14 });
@@ -312,5 +333,54 @@ describe('ipc handlers', () => {
     await h['projects:init'](dir);
     expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').replace(/\r\n/g, '\n'))
       .toContain('## 固定注意事項\n- Timeout → 建議：加重試');
+  });
+
+  it('pty channels are routed by path and guarded', async () => {
+    const { h, root, spawnCalls, writes } = setup();
+    const a = await h['projects:create']('sa'); const b = await h['projects:create']('sb');
+    await h['pty:start'](a.path, { continue: false, cols: 80, rows: 24 });
+    await h['pty:start'](b.path, { continue: false, cols: 80, rows: 24 });
+    expect(spawnCalls.map((c) => c.cwd)).toEqual([join(root, 'sa'), join(root, 'sb')]);
+    h['pty:write'](b.path, 'hi');
+    expect(writes).toEqual([[join(root, 'sb'), 'hi']]);
+    h['pty:write'](join(root, '..', 'x'), 'nope');   // 守衛失敗：靜默忽略
+    expect(writes).toEqual([[join(root, 'sb'), 'hi']]);
+    expect((await h['pty:list']()).map((s) => s.label)).toEqual(['sa', 'sb']);
+    await h['pty:kill'](a.path);
+    expect((await h['pty:list']()).map((s) => s.label)).toEqual(['sb']);
+    await expect(h['pty:kill'](join(root, '..', 'x'))).rejects.toThrow();
+    h.dispose();
+  });
+
+  it('pty:start rejects beyond the session limit', async () => {
+    const { h } = setup();
+    for (let i = 0; i < 4; i++) { const p = await h['projects:create'](`lim${i}`); await h['pty:start'](p.path, { continue: false, cols: 80, rows: 24 }); }
+    const extra = await h['projects:create']('lim-extra');
+    await expect(h['pty:start'](extra.path, { continue: false, cols: 80, rows: 24 })).rejects.toThrow(/too many sessions/);
+    h.dispose();
+  });
+
+  it('pty:focus moves the background state watcher and reports state changes of background sessions', async () => {
+    const onFocusChanged = vi.fn();
+    const { h, send } = setup({ onFocusChanged });
+    const a = await h['projects:create']('fa'); const b = await h['projects:create']('fb');
+    await h['projects:open'](a.path);
+    await h['pty:start'](a.path, { continue: false, cols: 80, rows: 24 });
+    h['pty:focus'](a.path);
+    await h['projects:open'](b.path);
+    await h['pty:start'](b.path, { continue: false, cols: 80, rows: 24 });
+    h['pty:focus'](b.path);
+    expect(onFocusChanged).toHaveBeenLastCalledWith(b.path);
+    send.mockClear();
+    const s = JSON.parse(readFileSync(join(a.path, '.pm', 'state.json'), 'utf8'));
+    s.stage = 'design'; s.stages.env.status = 'done'; s.stages.design.status = 'in_progress';
+    await new Promise((r) => setTimeout(r, 30));
+    writeFileSync(join(a.path, '.pm', 'state.json'), JSON.stringify(s));
+    await vi.waitFor(() => {
+      const call = send.mock.calls.find((c) => c[0] === 'project:state' && (c[1] as { path: string }).path === a.path);
+      expect(call).toBeTruthy();
+      expect((call![1] as { state: { stage: string } }).state.stage).toBe('design');
+    }, { timeout: 3000 });
+    h.dispose();
   });
 });

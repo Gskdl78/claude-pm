@@ -34,12 +34,18 @@ export class ProjectWatcher extends EventEmitter {
   private ticks = 0;
   private readonly targets: Target[];
 
-  constructor(dir: string, private readonly intervalMs = 500) {
+  /** stateOnly：只監看 .pm/state.json（背景 session 用，不需要 git 與 docs） */
+  constructor(dir: string, private readonly intervalMs = 500, opts: { stateOnly?: boolean } = {}) {
     super();
     const g = (...p: string[]) => join(dir, '.git', ...p);
     const gitFiles = [g('logs', 'HEAD'), g('HEAD'), g('index'), g('MERGE_HEAD'), g('refs', 'heads'), g('FETCH_HEAD'), g('packed-refs'), g('refs', 'tags'), g('refs', 'stash')];
+    const stateTarget: Target = { event: 'state', signature: () => groupSignature([join(dir, '.pm', 'state.json')]), every: 1, last: '' };
+    if (opts.stateOnly) {
+      this.targets = [stateTarget];
+      return;
+    }
     this.targets = [
-      { event: 'state', signature: () => groupSignature([join(dir, '.pm', 'state.json')]), every: 1, last: '' },
+      stateTarget,
       // logs/HEAD：commit 與切換；HEAD：切換分支；index：stage / unstage；MERGE_HEAD：合併開始與結束；
       // refs/heads（目錄 mtime）：新增 / 刪除分支；FETCH_HEAD：fetch / pull；packed-refs：gc 後的分支；
       // refs/tags（目錄 mtime）：建立 / 刪除標籤；refs/stash：收藏的 push / pop / drop

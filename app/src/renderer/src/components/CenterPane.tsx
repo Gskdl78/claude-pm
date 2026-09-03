@@ -1,4 +1,4 @@
-import { Terminal } from './Terminal';
+import { TerminalHost, type SessionState } from './Terminal';
 import { DocsTab } from './docs/DocsTab';
 import { InsightsView } from './insights/InsightsView';
 
@@ -7,9 +7,11 @@ export type CenterTab = 'terminal' | 'docs' | 'insights';
 interface Props {
   tab: CenterTab;
   onTab: (t: CenterTab) => void;
-  status: 'idle' | 'running' | 'exited';
-  launchSeq: number;
-  onRestart: () => void;
+  /** 目前活著（或剛結束）的 session，以專案路徑為鍵 */
+  sessions: Record<string, SessionState>;
+  /** 使用者正在看的專案；也是終端機顯示的那一個 */
+  currentPath: string | null;
+  onRestart: (path: string) => void;
   path: string | null;
   stageDocs: string[];
   selectedDoc: string | null;
@@ -26,7 +28,7 @@ interface Props {
 }
 
 /** 中間區域：終端機、文件與洞察三個分頁；三者都常駐，只切換 hidden（xterm 不能卸載）。 */
-export function CenterPane({ tab, onTab, status, launchSeq, onRestart, path, stageDocs, selectedDoc, onSelectDoc, docsRevision, onNotice, fontSize, focusSeq, insightsRevision, onRevealCommit }: Props) {
+export function CenterPane({ tab, onTab, sessions, currentPath, onRestart, path, stageDocs, selectedDoc, onSelectDoc, docsRevision, onNotice, fontSize, focusSeq, insightsRevision, onRevealCommit }: Props) {
   const tabButton = (id: CenterTab, label: string) => (
     <button role="tab" aria-selected={tab === id} className={`center-tab${tab === id ? ' active' : ''}`} onClick={() => onTab(id)}>{label}</button>
   );
@@ -39,7 +41,7 @@ export function CenterPane({ tab, onTab, status, launchSeq, onRestart, path, sta
         {tab === 'docs' && selectedDoc && <span className="muted center-title" title={selectedDoc}>{selectedDoc}</span>}
       </div>
       <div className="center-body">
-        <Terminal visible={tab === 'terminal'} status={status} launchSeq={launchSeq} onRestart={onRestart} fontSize={fontSize} focusSeq={focusSeq} />
+        <TerminalHost sessions={sessions} currentPath={currentPath} visible={tab === 'terminal'} fontSize={fontSize} focusSeq={focusSeq} onRestart={onRestart} />
         <DocsTab hidden={tab !== 'docs'} path={path} stageDocs={stageDocs} selected={selectedDoc} onSelect={onSelectDoc} docsRevision={docsRevision} onNotice={onNotice} />
         <InsightsView hidden={tab !== 'insights'} revision={insightsRevision} onRevealCommit={onRevealCommit} />
       </div>
