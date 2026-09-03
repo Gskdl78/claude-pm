@@ -98,6 +98,30 @@ describe('PtyManager', () => {
     f.procs[2].emitExit(0);
     expect(exit).not.toHaveBeenCalled();
   });
+
+  it('ignores data from superseded or killed processes', () => {
+    const f = fakeSpawn();
+    const m = new PtyManager(f.spawn);
+    const data = vi.fn();
+    m.on('data', data);
+
+    m.start({ cwd: 'a', command: 'claude', args: [], cols: 1, rows: 1 });
+    m.start({ cwd: 'b', command: 'claude', args: [], cols: 1, rows: 1 });
+
+    // Trailing output from the superseded process A must be dropped.
+    f.procs[0].emitData('stale');
+    expect(data).not.toHaveBeenCalled();
+
+    // Output from the current process B is still forwarded.
+    f.procs[1].emitData('live');
+    expect(data).toHaveBeenCalledWith('live');
+
+    // After an explicit kill(), trailing output must not be emitted either.
+    data.mockClear();
+    m.kill();
+    f.procs[1].emitData('after kill');
+    expect(data).not.toHaveBeenCalled();
+  });
 });
 
 describe('findClaude', () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createHandlers } from './ipc-handlers';
+import { createHandlers, type HandlerDeps } from './ipc-handlers';
 import { PtyManager, type SpawnFn } from './pty';
 
 const PLUGIN_DIR = resolve(__dirname, '../../../plugin');
@@ -14,7 +14,7 @@ beforeAll(() => {
   });
 });
 
-function setup() {
+function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty'>> = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
@@ -34,7 +34,7 @@ function setup() {
   const pty = new PtyManager(spawn);
   const send = vi.fn();
   const openPath = vi.fn(async () => '');
-  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }) });
+  const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), ...extra });
   return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes };
 }
 
@@ -161,5 +161,41 @@ describe('ipc handlers', () => {
     expect(openPath).toHaveBeenCalledWith(join(dir, 'CLAUDE.md'));
     expect(await h['claude:check']()).toEqual({ ok: true, path: 'x' });
     expect(existsSync(join(dir, '.claude'))).toBe(true);
+  });
+  it('pty:start reports the session directory through onSessionStart', async () => {
+    const onSessionStart = vi.fn();
+    const { h, root } = setup({ onSessionStart });
+    const created = await h['projects:create']('demo');
+    await h['projects:open'](created.path);
+    await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
+    expect(onSessionStart).toHaveBeenCalledWith(join(root, 'demo'));
+  });
+
+  it('pty:start does not call onSessionStart when the path is outside root', async () => {
+    const onSessionStart = vi.fn();
+    const { h, base } = setup({ onSessionStart });
+    await expect(h['pty:start'](join(base, 'outside'), { continue: false, cols: 80, rows: 24 })).rejects.toThrow();
+    expect(onSessionStart).not.toHaveBeenCalled();
+  });
+
+  it('pty:start does not call onSessionStart when the spawn fails', async () => {
+    const onSessionStart = vi.fn();
+    const onSessionEnd = vi.fn();
+    const throwing: SpawnFn = () => { throw new Error('spawn failed'); };
+    const { h } = setup({ onSessionStart, onSessionEnd, pty: new PtyManager(throwing) });
+    const created = await h['projects:create']('broken');
+    await expect(h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 })).rejects.toThrow(/spawn failed/);
+    expect(onSessionStart).not.toHaveBeenCalled();
+    // 失敗也要結束上一個 session，否則舊的閒置計時器會送出幽靈通知。
+    expect(onSessionEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('pty:kill reports the end of the session through onSessionEnd', async () => {
+    const onSessionEnd = vi.fn();
+    const { h } = setup({ onSessionEnd });
+    const created = await h['projects:create']('killed');
+    await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
+    await h['pty:kill']();
+    expect(onSessionEnd).toHaveBeenCalledTimes(1);
   });
 });

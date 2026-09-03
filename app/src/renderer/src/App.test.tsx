@@ -1,12 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import type { GitCommit, PmApi, ProjectInfo } from '../../shared/types';
+import type { GitCommit, PmApi, ProjectInfo, StageName } from '../../shared/types';
 
 vi.mock('./components/Terminal', () => ({
   Terminal: ({ status, onRestart }: { status: string; onRestart: () => void }) => (
     <div data-testid="terminal" data-status={status}><button onClick={onRestart}>重新啟動</button></div>
   ),
 }));
+
+// 只有檢查 notices 的測試才替換 GitPanel：其餘測試（含既有的 git 面板測試）仍用真的元件。
+// App 在每個測試才動態 import，所以 doMock 必須在 renderApp 之前呼叫。
+function mockGitPanel() {
+  vi.doMock('./components/git/GitPanel', () => ({
+    GitPanel: ({ notices }: { notices?: Array<{ id: number; text: string }> }) => (
+      <div data-testid="git-panel">{(notices ?? []).map((n) => <div key={n.id} className="notice">{n.text}</div>)}</div>
+    ),
+  }));
+}
 
 function project(name: string, envStatus: 'pending' | 'done' = 'pending'): ProjectInfo {
   return {
@@ -19,9 +29,17 @@ function project(name: string, envStatus: 'pending' | 'done' = 'pending'): Proje
   };
 }
 
-type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: number) => void> };
+function projectAt(name: string, stage: StageName | 'done', status: 'pending' | 'in_progress' | 'blocked' = 'in_progress'): ProjectInfo {
+  const p = project(name, 'done');
+  const s = p.state!;
+  if (stage !== 'done') s.stages[stage] = { status };
+  s.stage = stage;
+  return p;
+}
 
-function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [] }): PmApi {
+type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: number) => void>; idle: Array<(i: boolean) => void> };
+
+function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [], idle: [] }): PmApi {
   const api: PmApi = {
     getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: null, recent: [] })),
     setRoot: vi.fn(),
@@ -53,6 +71,7 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       write: vi.fn(), resize: vi.fn(), kill: vi.fn(async () => {}),
       onData: vi.fn(() => () => {}),
       onExit: vi.fn((cb) => { listeners.exit.push(cb); return () => {}; }),
+      onIdle: vi.fn((cb) => { listeners.idle.push(cb); return () => {}; }),
     },
     onStateChanged: vi.fn((cb) => { listeners.state.push(cb); return () => {}; }),
     onGitChanged: vi.fn(() => () => {}),
@@ -67,7 +86,7 @@ async function renderApp(api: PmApi) {
   return render(<App />);
 }
 
-beforeEach(() => { vi.resetModules(); });
+beforeEach(() => { vi.resetModules(); vi.doUnmock('./components/git/GitPanel'); });
 
 describe('App', () => {
   it('shows install screen when claude is missing', async () => {
@@ -85,7 +104,7 @@ describe('App', () => {
   });
 
   it('auto-opens lastProject with --continue and falls back when continue exits early', async () => {
-    const listeners: Listeners = { state: [], exit: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
     const api = mockApi({
       getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
@@ -130,7 +149,7 @@ describe('App', () => {
   });
 
   it('falls back once without --continue when a continue launch fails late', async () => {
-    const listeners: Listeners = { state: [], exit: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
     const api = mockApi({
       getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
@@ -228,7 +247,7 @@ describe('App', () => {
   });
 
   it('updates the stage panel when state changes arrive', async () => {
-    const listeners: Listeners = { state: [], exit: [] };
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
     const api = mockApi({}, listeners);
     await renderApp(api);
     fireEvent.click(await screen.findByText('alpha'));
@@ -254,5 +273,126 @@ describe('App', () => {
     await waitFor(() => expect(vi.mocked(api.git.status).mock.calls.length).toBeGreaterThan(n));
     fireEvent.click(screen.getByRole('tab', { name: '歷史' }));
     expect(screen.getByText('chore: x')).toBeInTheDocument();
+  });
+
+  it('enables the stage button and shows the waiting pill only while the pty is idle', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha]),
+      openProject: vi.fn(async () => alpha),
+    }, listeners);
+    await renderApp(api);
+    // renderApp 已經動態載入過 App，這裡拿到的是同一個模組實例。
+    const { ENTER_DELAY_MS } = await import('./App');
+    fireEvent.click(await screen.findByText('alpha'));
+    const btn = await screen.findByRole('button', { name: /產品設計/ });
+    expect(btn).toBeDisabled();
+    expect(screen.queryByText('● 等待回覆')).toBeNull();
+
+    act(() => { for (const cb of listeners.idle) cb(true); });
+    expect(btn).toBeEnabled();
+    expect(screen.getByText('● 等待回覆')).toBeInTheDocument();
+
+    // 指令與 Enter 必須分開寫入，合成一段會被 Claude Code 當成貼上而不送出。
+    try {
+      vi.useFakeTimers();
+      fireEvent.click(btn);
+      expect(api.pty.write).toHaveBeenNthCalledWith(1, '/stage-design');
+      expect(api.pty.write).toHaveBeenCalledTimes(1);
+      act(() => { vi.advanceTimersByTime(ENTER_DELAY_MS); });
+      expect(api.pty.write).toHaveBeenNthCalledWith(2, '\r');
+    } finally {
+      vi.useRealTimers();
+    }
+
+    act(() => { for (const cb of listeners.idle) cb(false); });
+    expect(btn).toBeDisabled();
+    expect(screen.queryByText('● 等待回覆')).toBeNull();
+  });
+
+  it('flashes the stage row and posts a notice when the stage advances', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha]),
+      openProject: vi.fn(async () => alpha),
+    }, listeners);
+    const { container } = await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await screen.findByRole('button', { name: /產品設計/ });
+
+    const advanced = projectAt('alpha', 'tech', 'pending');
+    advanced.state!.stages.design = { status: 'done', commit: 'abc1234' };
+    act(() => { for (const cb of listeners.state) cb(advanced); });
+
+    expect(container.querySelector('.stages')).toHaveClass('flash');
+    expect(screen.getByText('階段 產品設計 完成 → 技術設計')).toHaveClass('notice');
+
+    // 同一 stage 再送一次（例如 add-doc）不重複記錄
+    act(() => { for (const cb of listeners.state) cb({ ...advanced }); });
+    expect(screen.getAllByText(/^階段 /)).toHaveLength(1);
+  });
+
+  it('seeds the stage baseline from 重建 state so the next change is reported', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha]),
+      openProject: vi.fn(async () => ({ ...alpha, state: null })),
+      rebuildState: vi.fn(async () => alpha),
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    fireEvent.click(await screen.findByRole('button', { name: '重建 state' }));
+    await screen.findByRole('button', { name: /產品設計/ });
+
+    const advanced = projectAt('alpha', 'tech', 'pending');
+    advanced.state!.stages.design = { status: 'done', commit: 'abc1234' };
+    act(() => { for (const cb of listeners.state) cb(advanced); });
+    expect(screen.getByText('階段 產品設計 完成 → 技術設計')).toHaveClass('notice');
+  });
+
+  it('reports 全部完成 when the last stage finishes and does not compare across projects', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const alpha = projectAt('alpha', 'verify');
+    const beta = projectAt('beta', 'env', 'pending');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha, beta]),
+      openProject: vi.fn(async (path: string) => (path.endsWith('alpha') ? alpha : beta)),
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await screen.findByRole('button', { name: /人工驗證/ });
+
+    // 另一個專案的 state 事件不觸發比較
+    act(() => { for (const cb of listeners.state) cb(projectAt('beta', 'design')); });
+    expect(screen.queryByText(/^階段 /)).toBeNull();
+
+    const finished = projectAt('alpha', 'done');
+    act(() => { for (const cb of listeners.state) cb(finished); });
+    expect(screen.getByText('階段 人工驗證 完成 → 全部完成')).toBeInTheDocument();
+  });
+
+  it('clears idle when a new session starts', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({ listProjects: vi.fn(async () => [alpha]), openProject: vi.fn(async () => alpha) }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await screen.findByRole('button', { name: /產品設計/ });
+    act(() => { for (const cb of listeners.idle) cb(true); });
+    expect(screen.getByText('● 等待回覆')).toBeInTheDocument();
+
+    act(() => { for (const cb of listeners.exit) cb(0); });
+    expect(screen.queryByText('● 等待回覆')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重新啟動' }));
+    await waitFor(() => expect(api.pty.start).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('● 等待回覆')).toBeNull();
   });
 });

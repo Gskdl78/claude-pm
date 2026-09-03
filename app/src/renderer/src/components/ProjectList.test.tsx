@@ -54,4 +54,28 @@ describe('ProjectList stage pill', () => {
     expect(screen.getByText(/狀態異常/)).toHaveClass('pill', 'blocked');
     expect(screen.queryByRole('button', { name: '初始化' })).toBeNull();
   });
+
+  it('shows a waiting pill only on the project matching waitingPath', () => {
+    const a: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
+    const b: ProjectInfo = { name: 'delta', path: 'C:\\P\\delta', initialized: true, state: stateAt('design') };
+    render(<ProjectList projects={[a, b]} currentPath={a.path} waitingPath={a.path} onSelect={() => {}} onInit={() => {}} onNew={() => {}} />);
+    const pills = screen.getAllByText('● 等待回覆');
+    expect(pills).toHaveLength(1);
+    expect(pills[0]).toHaveClass('pill', 'waiting');
+    expect(pills[0].closest('.project')).toHaveTextContent('gamma');
+  });
+
+  it('shows both 未初始化 and the waiting pill on an uninitialised current project', () => {
+    const p: ProjectInfo = { name: 'zeta', path: 'C:\\P\\zeta', initialized: false, state: null };
+    render(<ProjectList projects={[p]} currentPath={p.path} waitingPath={p.path} onSelect={() => {}} onInit={() => {}} onNew={() => {}} />);
+    expect(screen.getByText('未初始化')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '初始化' })).toBeInTheDocument();
+    expect(screen.getByText('● 等待回覆')).toHaveClass('pill', 'waiting');
+  });
+
+  it('shows no waiting pill when waitingPath is null', () => {
+    const a: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
+    render(<ProjectList projects={[a]} currentPath={a.path} waitingPath={null} onSelect={() => {}} onInit={() => {}} onNew={() => {}} />);
+    expect(screen.queryByText('● 等待回覆')).toBeNull();
+  });
 });

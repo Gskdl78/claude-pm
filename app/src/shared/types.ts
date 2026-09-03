@@ -67,6 +67,9 @@ export interface PtyStartOptions {
   rows: number;
 }
 
+/** App 要寫進右欄輸出區的一行提示（例如階段切換）；id 遞增、只增不減 */
+export interface Notice { id: number; text: string }
+
 // ---- git panel ----------------------------------------------------------------
 export interface GitFileChange {
   path: string;        // repo 相對路徑，git 輸出的正斜線
@@ -175,6 +178,8 @@ export interface PmApi {
     kill(): Promise<void>;
     onData(cb: (data: string) => void): () => void;
     onExit(cb: (code: number) => void): () => void;
+    /** true = Claude Code 停在提示符等輸入（3 秒無輸出）；false = 忙碌或無 session */
+    onIdle(cb: (idle: boolean) => void): () => void;
   };
   onStateChanged(cb: (p: ProjectInfo) => void): () => void;
   onGitChanged(cb: (commits: GitCommit[]) => void): () => void;

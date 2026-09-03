@@ -15,6 +15,10 @@ export interface HandlerDeps {
   send: (channel: string, ...args: unknown[]) => void;
   openPath?: (p: string) => Promise<string>;
   checkClaude?: () => Promise<ClaudeCheck>;
+  /** pty 成功啟動後呼叫，帶專案目錄（已通過 root 守衛） */
+  onSessionStart?: (dir: string) => void;
+  /** pty 被主動終止後呼叫；kill() 不會觸發 exit 事件，需由此清掉等待輸入狀態 */
+  onSessionEnd?: () => void;
 }
 
 export interface Handlers extends GitHandlers {
@@ -108,13 +112,20 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'pty:start': async (path, opts) => {
       const dir = guard(path);
       const initialPrompt = checkInitialPrompt(opts.initialPrompt);
-      deps.pty.start({
-        cwd: dir,
-        command: 'claude',
-        args: buildClaudeArgs({ continue: opts.continue, initialPrompt }),
-        cols: clampSize(opts.cols, 80),
-        rows: clampSize(opts.rows, 24),
-      });
+      try {
+        deps.pty.start({
+          cwd: dir,
+          command: 'claude',
+          args: buildClaudeArgs({ continue: opts.continue, initialPrompt }),
+          cols: clampSize(opts.cols, 80),
+          rows: clampSize(opts.rows, 24),
+        });
+      } catch (e) {
+        // 失敗時也要收掉上一個 session，否則舊的閒置計時器會送出幽靈通知。
+        deps.onSessionEnd?.();
+        throw e;
+      }
+      deps.onSessionStart?.(dir);
     },
 
     'pty:write': (data) => { if (typeof data === 'string') deps.pty.write(data); },
@@ -123,7 +134,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       if (typeof rows !== 'number' || !Number.isFinite(rows)) return;
       deps.pty.resize(cols, rows);
     },
-    'pty:kill': async () => deps.pty.kill(),
+    'pty:kill': async () => { deps.pty.kill(); deps.onSessionEnd?.(); },
 
     dispose: () => { watcher?.stop(); watcher = null; },
   };
