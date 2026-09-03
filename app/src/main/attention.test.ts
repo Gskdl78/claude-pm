@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createAttention, type AttentionWindow } from './attention';
+import { createAttention, createNotifyGate, type AttentionWindow } from './attention';
 
 function fakeWin(focused: boolean) {
   const handlers: Record<string, Array<() => void>> = {};
@@ -76,5 +76,17 @@ describe('attention', () => {
     createAttention({ win, notify }).idle('beta', { background: true });
     expect(win.flashFrame).toHaveBeenCalledWith(true);
     expect(notify).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createNotifyGate', () => {
+  it('allows one notification per session until reset', () => {
+    const g = createNotifyGate();
+    expect(g.claim('a')).toBe(true);
+    expect(g.claim('a')).toBe(false);
+    expect(g.claim('b')).toBe(true);
+    g.reset('a');
+    expect(g.claim('a')).toBe(true);
+    expect(g.claim('b')).toBe(false);
   });
 });

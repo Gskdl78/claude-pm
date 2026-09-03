@@ -14,7 +14,7 @@ beforeAll(() => {
   });
 });
 
-function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'onFocusChanged' | 'watchIntervalMs' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged' | 'pinnedFile'>> = {}) {
+function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'onFocusChanged' | 'watchIntervalMs' | 'pty' | 'openExternal' | 'pickFolder' | 'onConfigChanged' | 'pinnedFile' | 'onUserInput'>> = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
@@ -382,5 +382,16 @@ describe('ipc handlers', () => {
       expect((call![1] as { state: { stage: string } }).state.stage).toBe('design');
     }, { timeout: 3000 });
     h.dispose();
+  });
+
+  it('pty:write reports user input for the guarded session path', async () => {
+    const onUserInput = vi.fn();
+    const { h, root, base } = setup({ onUserInput });
+    const p = await h['projects:create']('typing');
+    await h['pty:start'](p.path, { continue: false, cols: 80, rows: 24 });
+    h['pty:write'](p.path, 'x');
+    expect(onUserInput).toHaveBeenCalledWith(join(root, 'typing'));
+    h['pty:write'](join(base, 'outside'), 'y');
+    expect(onUserInput).toHaveBeenCalledTimes(1);
   });
 });

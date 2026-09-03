@@ -56,3 +56,26 @@ export function createAttention(deps: { win: AttentionWindow; notify: Notify }):
     },
   };
 }
+
+/**
+ * 每個 session 只通知一次：Claude Code 的狀態列會定期重繪（時間、用量），造成忙碌→閒置反覆，
+ * 若每次閒置都通知就會一直跳。通知過的 session 要等使用者對它輸入、或切換到它之後才會再通知。
+ */
+export interface NotifyGate {
+  /** 這個 session 這輪可以通知嗎？回 true 同時記為已通知 */
+  claim(path: string): boolean;
+  /** 使用者對該 session 有互動（輸入 / 切換過去 / session 結束）：下次閒置可再通知 */
+  reset(path: string): void;
+}
+
+export function createNotifyGate(): NotifyGate {
+  const notified = new Set<string>();
+  return {
+    claim(path) {
+      if (notified.has(path)) return false;
+      notified.add(path);
+      return true;
+    },
+    reset(path) { notified.delete(path); },
+  };
+}

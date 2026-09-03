@@ -27,6 +27,8 @@ export interface HandlerDeps {
   onSessionEnd?: (dir: string) => void;
   /** renderer 目前看的專案；用來決定背景 watcher 與通知規則 */
   onFocusChanged?: (path: string | null) => void;
+  /** 使用者對某個 session 送出輸入（鍵盤 / 貼上 / 階段按鈕）；用來重置「已通知」狀態 */
+  onUserInput?: (dir: string) => void;
   /** 背景 state watcher 週期（測試用） */
   watchIntervalMs?: number;
   /** 系統資料夾選擇器；沒注入（測試）時 dialog:pickFolder 回 null */
@@ -203,7 +205,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       syncBgWatchers();
     },
 
-    'pty:write': (path, data) => { const dir = softGuard(path); if (dir && typeof data === 'string') deps.pty.write(dir, data); },
+    'pty:write': (path, data) => {
+      const dir = softGuard(path);
+      if (!dir || typeof data !== 'string') return;
+      deps.pty.write(dir, data);
+      deps.onUserInput?.(dir);
+    },
     'pty:resize': (path, cols, rows) => {
       const dir = softGuard(path);
       if (!dir) return;
