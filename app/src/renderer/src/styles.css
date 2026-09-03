@@ -119,7 +119,9 @@ button.chip.current:disabled { cursor: default; opacity: .6; }
 .dialog { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); }
 .dialog form { background: var(--panel); border: 1px solid var(--border); padding: 16px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; min-width: 320px; }
 .center { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.term-hosts { position: absolute; inset: 0; }
 .xterm-host { position: absolute; inset: 0; padding: 4px; }
+.xterm-host[hidden] { display: none; }
 
 /* --- git panel ------------------------------------------------------------ */
 select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
