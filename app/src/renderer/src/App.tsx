@@ -50,8 +50,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  // 超過 session 上限而還沒開成的專案；有值時顯示上限對話框
-  const [limitPending, setLimitPending] = useState<ProjectInfo | null>(null);
+  // 超過 session 上限而還沒開成的專案，連同主行程當下回報的 live session 清單；有值時顯示上限對話框
+  const [limitPending, setLimitPending] = useState<{ project: ProjectInfo; live: Array<{ path: string; name: string }> } | null>(null);
   const [limitBusy, setLimitBusy] = useState(false);
   // 等待使用者確認關閉 session 的專案
   const [closeReq, setCloseReq] = useState<ProjectInfo | null>(null);
@@ -88,6 +88,8 @@ export default function App() {
   const updateSession = useCallback((path: string, next: SessionState | null | ((prev: SessionState | undefined) => SessionState | null)) => {
     setSessions((prev) => {
       const value = typeof next === 'function' ? next(prev[path]) : next;
+      // 刪除一個本來就不存在的 session：維持原物件，避免多一次無意義的 render。
+      if (value === null && !(path in prev)) return prev;
       const copy = { ...prev };
       if (value === null) delete copy[path];
       else copy[path] = value;
@@ -142,7 +144,12 @@ export default function App() {
     } catch (e) {
       const msg = errorMessage(e);
       // 上限不是錯誤：請使用者挑一個 session 關掉再繼續。
-      if (/too many sessions/.test(msg)) { setLimitPending(p); return; }
+      if (/too many sessions/.test(msg)) {
+        // 名稱直接用主行程的 label（路徑尾端），確保清單就是真正還活著的 session。
+        const live = await pm.pty.list();
+        setLimitPending({ project: p, live: live.map((s) => ({ path: s.path, name: s.label })) });
+        return;
+      }
       updateSession(p.path, (prev) => ({ status: 'exited', idle: false, launchSeq: prev?.launchSeq ?? 0, usedContinue }));
       setError(msg);
       return;
@@ -185,13 +192,17 @@ export default function App() {
 
   // 關閉一個 session；目前專案留著 exited 狀態（覆蓋層可重新啟動），其他直接移除。
   const closeSession = useCallback(async (path: string, silent = false) => {
-    await pm.pty.kill(path);
-    if (currentRef.current?.path === path) {
-      updateSession(path, (prev) => ({ status: 'exited', idle: false, launchSeq: prev?.launchSeq ?? 0, usedContinue: prev?.usedContinue ?? false }));
-    } else {
-      updateSession(path, null);
+    try {
+      await pm.pty.kill(path);
+      if (currentRef.current?.path === path) {
+        updateSession(path, (prev) => ({ status: 'exited', idle: false, launchSeq: prev?.launchSeq ?? 0, usedContinue: prev?.usedContinue ?? false }));
+      } else {
+        updateSession(path, null);
+      }
+      if (!silent) pushNotice(`已關閉 ${basename(path)} 的 session`);
+    } catch (e) {
+      pushNotice(errorMessage(e), 'error');
     }
-    if (!silent) pushNotice(`已關閉 ${basename(path)} 的 session`);
   }, [updateSession, pushNotice]);
 
   useEffect(() => {
@@ -203,6 +214,15 @@ export default function App() {
       const cfg = await pm.getConfig();
       const list = await refreshProjects();
       if (cancelled) return;
+      // renderer 重載後主行程的 session 還活著：先接回來，切過去時才不會又開一份。
+      // launchSeq 從 1 起算只是顯示用，與主行程實際啟動過幾次無關。
+      const live = await pm.pty.list();
+      if (cancelled) return;
+      const seeded: Record<string, SessionState> = Object.fromEntries(
+        live.map((s) => [s.path, { status: 'running' as const, idle: s.idle, launchSeq: 1, usedContinue: false }]),
+      );
+      sessionsRef.current = seeded;
+      setSessions(seeded);
       setConfig(cfg);
       setScreen('main');
       if (cfg.lastProject) {
@@ -236,6 +256,8 @@ export default function App() {
         const info = currentRef.current?.path === path ? currentRef.current : projectsRef.current.find((x) => x.path === path);
         if (info) { void launch(info, false); return; }
       }
+      // 背景 session 沒有覆蓋層可以按重新啟動，留著只是多一個沒用的 xterm 實例。
+      if (currentRef.current?.path !== path) { updateSession(path, null); return; }
       updateSession(path, { ...s, status: 'exited', idle: false });
     });
     return () => { offState(); offGit(); offDocs(); offIdle(); offExit(); };
@@ -290,8 +312,9 @@ export default function App() {
     setSettingsBusy(true); setSettingsError(null);
     try {
       if (root !== config.root) {
+        // 主行程在 config:setRoot 裡就把所有 session 收掉了：舊路徑已在新 root 之外，
+        // renderer 這裡再呼叫 pty:kill 只會被守衛拒絕，所以只清畫面狀態。
         setConfig(await pm.setRoot(root));
-        for (const path of Object.keys(sessionsRef.current)) await pm.pty.kill(path);
         sessionsRef.current = {};
         setSessions({});
         pm.pty.focus(null);
@@ -336,7 +359,6 @@ export default function App() {
   const ptyIdle = currentSession?.idle ?? false;
   const livePaths = new Set(Object.entries(sessions).filter(([, s]) => s.status === 'running').map(([path]) => path));
   const waitingPaths = new Set(Object.entries(sessions).filter(([, s]) => s.status === 'running' && s.idle).map(([path]) => path));
-  const liveSessions = [...livePaths].map((path) => ({ path, name: projects.find((p) => p.path === path)?.name ?? basename(path) }));
 
   // 只在 Claude Code 停在提示符時送，避免打斷正在輸出的回應。
   // 指令與 Enter 分兩次寫入，否則整段會被當成貼上而不送出。
@@ -352,7 +374,7 @@ export default function App() {
     setLimitBusy(true);
     try {
       await closeSession(path, true);
-      const pending = limitPending;
+      const pending = limitPending?.project;
       setLimitPending(null);
       if (pending) await launch(pending, true);
     } finally {
@@ -402,7 +424,7 @@ export default function App() {
         } : null}
         onConfirm={() => { const p = closeReq; setCloseReq(null); if (p) void closeSession(p.path); }}
         onCancel={() => setCloseReq(null)} />
-      <SessionLimitDialog pending={limitPending} live={liveSessions} busy={limitBusy}
+      <SessionLimitDialog pending={limitPending?.project ?? null} live={limitPending?.live ?? []} busy={limitBusy}
         onClose={(path) => { void handleLimitClose(path); }} onCancel={() => setLimitPending(null)} />
       {config && (
         <SettingsDialog open={settingsOpen} config={config} busy={settingsBusy} error={settingsError}

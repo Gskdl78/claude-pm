@@ -108,6 +108,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     for (const dir of [...bgWatchers.keys()]) if (!live.has(dir) || dir === focusPath) bgUnwatch(dir);
     for (const dir of live) if (dir !== focusPath) bgWatch(dir);
   };
+  // pty 自己結束（不是被 kill）時清掉它的背景 watcher，避免留下沒有 session 的輪詢。
+  const onPtyExit = () => { syncBgWatchers(); };
+  deps.pty.on('exit', onPtyExit);
   /** 射後不理的頻道：路徑不合法就靜默忽略，不丟例外回 renderer */
   const softGuard = (p: unknown): string | null => { try { return typeof p === 'string' ? guard(p) : null; } catch { return null; } };
 
@@ -126,6 +129,14 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'config:setRoot': async (root) => {
       if (!existsSync(root)) throw new Error(`root not found: ${root}`);
       watcher?.stop(); watcher = null;
+      // 換了根目錄之後舊路徑會被 assertInsideRoot 擋下，renderer 再也殺不掉這些 session，
+      // 所以必須在 persist 之前就地收乾淨，否則它們會變成沒人管的孤兒行程。
+      const prev = deps.pty.list();
+      deps.pty.killAll();
+      for (const s of prev) deps.onSessionEnd?.(s.path);
+      focusPath = null;
+      deps.onFocusChanged?.(null);
+      syncBgWatchers();
       persist({ ...cfg, root, lastProject: null });
       return cfg;
     },
@@ -218,6 +229,10 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return next;
     },
 
-    dispose: () => { watcher?.stop(); watcher = null; for (const dir of [...bgWatchers.keys()]) bgUnwatch(dir); },
+    dispose: () => {
+      deps.pty.off('exit', onPtyExit);
+      watcher?.stop(); watcher = null;
+      for (const dir of [...bgWatchers.keys()]) bgUnwatch(dir);
+    },
   };
 }

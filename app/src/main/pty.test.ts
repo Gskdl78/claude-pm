@@ -32,14 +32,15 @@ describe('buildClaudeArgs', () => {
   });
 });
 
-beforeEach(() => { vi.useFakeTimers(); });
-afterEach(() => { vi.useRealTimers(); });
-
 const A = 'C:\\P\\a';
 const B = 'C:\\P\\b';
 const opts = { command: 'claude', args: [], cols: 80, rows: 24 };
 
 describe('SessionManager', () => {
+  // 假計時器只給閒置偵測用；findClaude 會真的執行外部指令，不能被凍住。
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('spawns one process per path with the path as cwd and routes data/exit by path', () => {
     const { spawn, calls, procs } = fakeSpawn();
     const m = new SessionManager(spawn);

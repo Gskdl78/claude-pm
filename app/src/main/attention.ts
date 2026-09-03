@@ -10,8 +10,6 @@ export type Notify = (title: string, body: string) => void;
 export interface Attention {
   /** pty 進入閒置。background：這個 session 不是使用者正在看的專案 → 即使視窗聚焦也通知（不閃爍） */
   idle(label: string, opts?: { background?: boolean }): void;
-  /** pty 恢復輸出：目前不需動作，保留給呼叫端對稱使用 */
-  busy(): void;
 }
 
 /** 延遲載入 electron，避免 vitest 的 node 環境在 import 時載入它（與 pty.ts 的 node-pty 作法相同）。 */
@@ -56,6 +54,5 @@ export function createAttention(deps: { win: AttentionWindow; notify: Notify }):
       // 通知中心不可用或建立失敗時仍保留閃爍
       try { notify(`${label} 等待你的回覆`, body); } catch { /* 忽略 */ }
     },
-    busy() { /* 閃爍只由 focus 取消 */ },
   };
 }

@@ -497,7 +497,7 @@ describe('App', () => {
     expect(api.pty.kill).not.toHaveBeenCalled();
   });
 
-  it('changing root closes the current project, kills the pty and reloads the list', async () => {
+  it('changing root closes the current project, clears the sessions and reloads the list', async () => {
     // 主行程的 updateConfig 回傳完整設定（含剛換掉的 root），mock 要跟著記住它
     let root = CFG.root;
     const api = mockApi({
@@ -513,8 +513,9 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
     await waitFor(() => expect(api.setRoot).toHaveBeenCalledWith('D:\\Other'));
-    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\alpha'));
     await waitFor(() => expect(api.listProjects).toHaveBeenCalledTimes(2));
+    // 主行程在 config:setRoot 裡就殺掉了；舊路徑已在新 root 之外，renderer 再殺只會被守衛拒絕
+    expect(api.pty.kill).not.toHaveBeenCalled();
     expect(screen.getByText('選擇或建立一個專案')).toBeInTheDocument();
     expect(screen.getByText('D:\\Other')).toBeInTheDocument();
     // 換根目錄就是換掉所有 session：終端機不該再留著舊專案的實例
@@ -637,6 +638,8 @@ describe('App', () => {
       live.add(path);
     });
     api.pty.kill = vi.fn(async (path: string) => { live.delete(path); });
+    // 對話框的清單來自主行程的 pty:list，名稱是 label（路徑尾端）
+    api.pty.list = vi.fn(async () => [...live].map((path) => ({ path, label: path.split('\\').pop()!, running: true, idle: false })));
     await renderApp(api);
     for (const n of ['p1', 'p2', 'p3', 'p4']) {
       fireEvent.click(await screen.findByText(n));
@@ -653,6 +656,19 @@ describe('App', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'session 上限' })).toBeNull());
     expect(screen.getByText('p1').closest('.project')).not.toHaveTextContent('● 執行中');
     expect(screen.getByText('p5').closest('.project')).toHaveTextContent('● 執行中');
+  });
+
+  it('adopts the sessions the main process still has at mount', async () => {
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({ listProjects: vi.fn(async () => [alpha]), openProject: vi.fn(async () => alpha) });
+    api.pty.list = vi.fn(async () => [{ path: alpha.path, label: 'alpha', running: true, idle: false }]);
+    await renderApp(api);
+    // renderer 重載後主行程還留著的 session 直接接手：側欄馬上是執行中
+    const row = (await screen.findByText('alpha')).closest('.project') as HTMLElement;
+    expect(row).toHaveTextContent('● 執行中');
+    fireEvent.click(row);
+    await waitFor(() => expect(screen.getByTestId('terminal')).toHaveAttribute('data-current', 'C:\\P\\alpha'));
+    expect(api.pty.start).not.toHaveBeenCalled();
   });
 
   it('closing the current session shows the exited overlay; closing a background one removes its pill', async () => {
@@ -727,7 +743,7 @@ describe('App', () => {
     expect(screen.getByTestId('terminal')).toHaveAttribute('data-status', 'running');
   });
 
-  it('changing root kills every session', async () => {
+  it('changing root drops every session without killing from the renderer', async () => {
     let root = CFG.root;
     const alpha = projectAt('alpha', 'design');
     const beta = projectAt('beta', 'design');
@@ -746,9 +762,8 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '設定' }));
     fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
-    await waitFor(() => expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\alpha'));
-    expect(api.pty.kill).toHaveBeenCalledWith('C:\\P\\beta');
     await waitFor(() => expect(screen.queryAllByTestId('session')).toHaveLength(0));
+    expect(api.pty.kill).not.toHaveBeenCalled();
   });
 
   it('kills sessions whose project is gone after a refresh', async () => {

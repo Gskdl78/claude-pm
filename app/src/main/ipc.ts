@@ -24,8 +24,7 @@ export function registerIpc({ win, pty, pluginDir }: { win: BrowserWindow; pty: 
       return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
     },
     onConfigChanged: (cfg) => { notifyOnIdle = cfg.notifyOnIdle; },
-    onSessionStart: (dir) => { send('pty:idle', dir, false); },
-    onSessionEnd: (dir) => { send('pty:idle', dir, false); },
+    // 啟動與結束都會由 SessionManager 送出 idle 事件，這裡不必再補送 pty:idle。
     onFocusChanged: (p) => { focusPath = p; },
   });
   void h['config:get']().then((cfg) => { notifyOnIdle = cfg.notifyOnIdle; });

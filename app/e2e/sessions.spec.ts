@@ -50,6 +50,14 @@ test('keeps a session per project and closes one from the sidebar', async () => 
     // 兩個專案各自自動啟動一個 claude session
     await createProject(page, 's1');
     await expect(page.locator('.xterm-host:not([hidden])')).toHaveCount(1);
+
+    // 記下 s1 畫面上的內容，切走再切回來必須還是同一份（沒有被重開）
+    let s1Sample = '';
+    await expect.poll(async () => {
+      s1Sample = (await page.locator('.xterm-host:not([hidden])').innerText()).replace(/\s+/g, '').slice(0, 20);
+      return s1Sample.length;
+    }, { timeout: 30_000 }).toBeGreaterThan(0);
+
     await createProject(page, 's2');
 
     const s1 = page.locator('.project', { hasText: 's1' });
@@ -61,6 +69,15 @@ test('keeps a session per project and closes one from the sidebar', async () => 
     // 主行程有兩個 pty，但畫面上只有目前專案的終端機
     await expect.poll(async () => (await page.evaluate(() => (window as unknown as PmWindow).pm.pty.list())).length, { timeout: 15_000 }).toBe(2);
     await expect(page.locator('.xterm-host:not([hidden])')).toHaveCount(1);
+
+    // 切回 s1：捲軸內容還在，而且 pty 沒有重開
+    await s1.click();
+    await expect(page.locator('.project.active')).toHaveText(/s1/);
+    await expect.poll(async () => (await page.locator('.xterm-host:not([hidden])').innerText()).replace(/\s+/g, ''), { timeout: 15_000 }).toContain(s1Sample);
+    expect((await page.evaluate(() => (window as unknown as PmWindow).pm.pty.list())).length).toBe(2);
+
+    await s2.click();
+    await expect(page.locator('.project.active')).toHaveText(/s2/);
 
     // 關閉目前專案（s2）的 session：確認後只剩 s1 的 pty，s2 的 pill 消失
     await s2.getByRole('button', { name: '關閉 session' }).click();

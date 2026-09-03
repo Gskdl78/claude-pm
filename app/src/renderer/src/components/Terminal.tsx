@@ -27,6 +27,9 @@ interface Props {
 
 interface Inst { term: XTerm; fit: FitAddon; host: HTMLDivElement; dispose: () => void; seenLaunchSeq: number }
 
+/** 實例還沒建好時先留住的輸出量；超過就丟掉最舊的，避免無上限成長 */
+const MAX_PENDING_CHUNKS = 64;
+
 /**
  * Electron 44's sandboxed renderer grants `clipboard-read`/`clipboard-write`
  * without a prompt on the bundled file:// page, so the standard async
@@ -135,22 +138,41 @@ export function TerminalHost({ sessions, currentPath, visible = true, fontSize =
   const fontSizeRef = useRef(fontSize);
   fontSizeRef.current = fontSize;
 
-  // 所有 session 的輸出只訂閱一次，依 path 分派
-  useEffect(() => pm.pty.onData((path, d) => instances.current.get(path)?.term.write(d)), []);
+  // 主行程可能在 React 建好實例之前就送出輸出，先依 path 緩衝，建立時再倒進去。
+  const pendingData = useRef(new Map<string, string[]>());
 
-  // 有 session 沒實例 → 建；實例沒 session → 銷毀
+  // 所有 session 的輸出只訂閱一次，依 path 分派
+  useEffect(() => pm.pty.onData((path, d) => {
+    const inst = instances.current.get(path);
+    if (inst) { inst.term.write(d); return; }
+    const buf = pendingData.current.get(path) ?? [];
+    buf.push(d);
+    if (buf.length > MAX_PENDING_CHUNKS) buf.splice(0, buf.length - MAX_PENDING_CHUNKS);
+    pendingData.current.set(path, buf);
+  }), []);
+
+  // 有 session 沒實例 → 建；實例沒 session → 銷毀；launchSeq 變了 → 清畫面
   const keys = Object.keys(sessions).sort().join('\n');
   useEffect(() => {
     const el = container.current;
     if (!el) return;
-    for (const path of Object.keys(sessions)) {
-      if (!instances.current.has(path)) instances.current.set(path, createInstance(path, el, fontSizeRef.current, sessions[path]!.launchSeq));
+    for (const [path, s] of Object.entries(sessions)) {
+      const existing = instances.current.get(path);
+      if (!existing) {
+        const inst = createInstance(path, el, fontSizeRef.current, s.launchSeq);
+        instances.current.set(path, inst);
+        const buf = pendingData.current.get(path);
+        if (buf) { pendingData.current.delete(path); for (const chunk of buf) inst.term.write(chunk); }
+        continue;
+      }
+      // 新的 pty 是新的對話：不清空的話輸出會接在上一次的捲軸後面。
+      // 每個實例都要比對，背景 session 重新啟動（--continue 重試）才會清到正確的終端機。
+      if (existing.seenLaunchSeq !== s.launchSeq) { existing.seenLaunchSeq = s.launchSeq; existing.term.reset(); }
     }
     for (const [path, inst] of instances.current) {
-      if (!(path in sessions)) { inst.dispose(); instances.current.delete(path); }
+      if (!(path in sessions)) { inst.dispose(); instances.current.delete(path); pendingData.current.delete(path); }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keys]);
+  }, [sessions]);
 
   useEffect(() => () => { for (const inst of instances.current.values()) inst.dispose(); instances.current.clear(); }, []);
 
@@ -164,14 +186,11 @@ export function TerminalHost({ sessions, currentPath, visible = true, fontSize =
     if (focus) inst.term.focus();
   };
 
-  // 顯示 / 隱藏、launchSeq 重設、切換後 fit + focus
+  // 顯示 / 隱藏、切換或重新啟動後 fit + focus（清畫面由上面的實例同步負責）
   useEffect(() => {
     for (const [path, inst] of instances.current) inst.host.hidden = !visible || path !== currentPath;
     if (!currentPath || !current) return;
-    const inst = instances.current.get(currentPath);
-    if (!inst) return;
-    // 新的 pty 是新的對話：不清空的話輸出會接在上一次的捲軸後面
-    if (inst.seenLaunchSeq !== current.launchSeq) { inst.seenLaunchSeq = current.launchSeq; inst.term.reset(); }
+    if (!instances.current.has(currentPath)) return;
     if (visible && current.status === 'running') fitCurrent(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keys, currentPath, visible, current?.launchSeq, current?.status]);

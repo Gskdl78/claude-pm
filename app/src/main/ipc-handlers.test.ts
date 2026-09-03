@@ -24,10 +24,12 @@ function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd
   // 每個 proc 都往同一個陣列記錄，第一欄是它的 cwd：可驗證輸入被送到正確的 session
   const writes: Array<[string, unknown]> = [];
   const resizes: Array<[unknown, unknown]> = [];
+  // 被終止的行程；用來驗證 config:setRoot 真的收掉了舊 root 的 session
+  const kills: string[] = [];
   const spawn: SpawnFn = (file, args, opts) => {
     spawnCalls.push({ file, args, cwd: opts.cwd, cols: opts.cols, rows: opts.rows });
     return {
-      onData() {}, onExit() {}, kill() {},
+      onData() {}, onExit() {}, kill() { kills.push(opts.cwd); },
       write(d) { writes.push([opts.cwd, d]); },
       resize(c, r) { resizes.push([c, r]); },
     };
@@ -37,7 +39,7 @@ function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd
   const openPath = vi.fn(async () => '');
   // 釘選檔一定要落在暫存目錄裡，測試不可寫到真實家目錄。
   const h = createHandlers({ pluginDir: PLUGIN_DIR, configFile, pty, send, openPath, checkClaude: async () => ({ ok: true, path: 'x' }), pinnedFile: join(base, 'pinned-notes.md'), watchIntervalMs: 30, ...extra });
-  return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes };
+  return { base, root, configFile, h, send, spawnCalls, openPath, writes, resizes, kills };
 }
 
 describe('ipc handlers', () => {
@@ -47,6 +49,24 @@ describe('ipc handlers', () => {
     await expect(h['config:setRoot'](join(base, 'missing'))).rejects.toThrow(/root not found/);
     const other = join(base, 'other'); mkdirSync(other);
     expect((await h['config:setRoot'](other)).root).toBe(other);
+  });
+
+  it('config:setRoot kills every session before the new root makes them unreachable', async () => {
+    const onSessionEnd = vi.fn();
+    const onFocusChanged = vi.fn();
+    const { h, base, kills } = setup({ onSessionEnd, onFocusChanged });
+    const created = await h['projects:create']('demo');
+    await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
+    expect((await h['pty:list']()).map((s) => s.path)).toEqual([created.path]);
+
+    const other = join(base, 'other'); mkdirSync(other);
+    await h['config:setRoot'](other);
+    // 換根目錄之後 renderer 再也殺不掉舊路徑，所以主行程必須自己收乾淨
+    expect(await h['pty:list']()).toEqual([]);
+    expect(kills).toEqual([created.path]);
+    expect(onSessionEnd).toHaveBeenCalledWith(created.path);
+    expect(onFocusChanged).toHaveBeenLastCalledWith(null);
+    h.dispose();
   });
 
   it('create → list → open remembers project and starts pty with /stage-env', async () => {

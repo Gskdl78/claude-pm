@@ -113,6 +113,22 @@ describe('TerminalHost', () => {
     expect(terms[0]!.dispose).toHaveBeenCalled();
   });
 
+  it('resets a background instance when its own launchSeq changes', () => {
+    const { rerender } = render(<TerminalHost sessions={{ [A]: running(1), [B]: running(1) }} currentPath={A} onRestart={() => {}} />);
+    // 背景 session 的 --continue 重試：要清的是它自己的終端機，不是目前這個
+    rerender(<TerminalHost sessions={{ [A]: running(1), [B]: running(2) }} currentPath={A} onRestart={() => {}} />);
+    expect(terms[1]!.reset).toHaveBeenCalledTimes(1);
+    expect(terms[0]!.reset).not.toHaveBeenCalled();
+  });
+
+  it('buffers output that arrives before the instance exists and flushes it on creation', () => {
+    const { rerender } = render(<TerminalHost sessions={{}} currentPath={null} onRestart={() => {}} />);
+    dataCb(A, 'early output');
+    expect(terms).toHaveLength(0);
+    rerender(<TerminalHost sessions={{ [A]: running() }} currentPath={A} onRestart={() => {}} />);
+    expect(terms[0]!.write).toHaveBeenCalledWith('early output');
+  });
+
   it('shows the exited overlay for the current session and a start overlay when there is none', () => {
     const onRestart = vi.fn();
     const { rerender } = render(<TerminalHost sessions={{ [A]: { ...running(), status: 'exited' } }} currentPath={A} onRestart={onRestart} />);
