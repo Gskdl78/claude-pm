@@ -107,4 +107,21 @@ describe('ProjectWatcher', () => {
       w.stop();
     }
   });
+
+  it('stateOnly watcher ignores git and docs changes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pm-watch-'));
+    mkdirSync(join(dir, '.pm')); mkdirSync(join(dir, '.git', 'logs'), { recursive: true }); mkdirSync(join(dir, 'docs'));
+    const w = new ProjectWatcher(dir, 30, { stateOnly: true });
+    const seen: string[] = [];
+    w.on('git', () => seen.push('git')); w.on('docs', () => seen.push('docs'));
+    w.start();
+    try {
+      const p = once(w, 'state');
+      writeFileSync(join(dir, '.pm', 'state.json'), '{}');
+      await p;
+      writeFileSync(join(dir, '.git', 'logs', 'HEAD'), 'x'); writeFileSync(join(dir, 'docs', 'a.md'), '#');
+      await wait(200);
+      expect(seen).toEqual([]);
+    } finally { w.stop(); }
+  });
 });

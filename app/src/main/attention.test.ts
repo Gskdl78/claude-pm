@@ -60,4 +60,21 @@ describe('attention', () => {
     expect(win.flashFrame).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it('notifies for a background session even when focused, without flashing', () => {
+    const win = fakeWin(true);
+    const notify = vi.fn();
+    const a = createAttention({ win, notify });
+    a.idle('beta', { background: true });
+    expect(win.flashFrame).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith('beta 等待你的回覆', '切換到 beta 專案繼續對話');
+  });
+
+  it('background + unfocused flashes and notifies', () => {
+    const win = fakeWin(false);
+    const notify = vi.fn();
+    createAttention({ win, notify }).idle('beta', { background: true });
+    expect(win.flashFrame).toHaveBeenCalledWith(true);
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
 });

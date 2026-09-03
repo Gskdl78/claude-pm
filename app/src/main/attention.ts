@@ -8,8 +8,8 @@ export interface AttentionWindow {
 export type Notify = (title: string, body: string) => void;
 
 export interface Attention {
-  /** pty 進入閒置：視窗未聚焦時閃爍工作列並發系統通知 */
-  idle(label: string): void;
+  /** pty 進入閒置。background：這個 session 不是使用者正在看的專案 → 即使視窗聚焦也通知（不閃爍） */
+  idle(label: string, opts?: { background?: boolean }): void;
   /** pty 恢復輸出：目前不需動作，保留給呼叫端對稱使用 */
   busy(): void;
 }
@@ -46,11 +46,15 @@ export function createAttention(deps: { win: AttentionWindow; notify: Notify }):
   const { win, notify } = deps;
   win.on('focus', () => { if (!win.isDestroyed()) win.flashFrame(false); });
   return {
-    idle(label) {
-      if (win.isDestroyed() || win.isFocused()) return;
-      win.flashFrame(true);
+    idle(label, opts) {
+      if (win.isDestroyed()) return;
+      const focused = win.isFocused();
+      const background = opts?.background === true;
+      if (!focused) win.flashFrame(true);
+      if (focused && !background) return;
+      const body = background ? `切換到 ${label} 專案繼續對話` : '回到 claude-pm 繼續對話';
       // 通知中心不可用或建立失敗時仍保留閃爍
-      try { notify(`${label} 等待你的回覆`, '回到 claude-pm 繼續對話'); } catch { /* 忽略 */ }
+      try { notify(`${label} 等待你的回覆`, body); } catch { /* 忽略 */ }
     },
     busy() { /* 閃爍只由 focus 取消 */ },
   };
