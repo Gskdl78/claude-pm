@@ -180,11 +180,14 @@ describe('ipc handlers', () => {
 
   it('pty:start does not call onSessionStart when the spawn fails', async () => {
     const onSessionStart = vi.fn();
+    const onSessionEnd = vi.fn();
     const throwing: SpawnFn = () => { throw new Error('spawn failed'); };
-    const { h } = setup({ onSessionStart, pty: new PtyManager(throwing) });
+    const { h } = setup({ onSessionStart, onSessionEnd, pty: new PtyManager(throwing) });
     const created = await h['projects:create']('broken');
     await expect(h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 })).rejects.toThrow(/spawn failed/);
     expect(onSessionStart).not.toHaveBeenCalled();
+    // 失敗也要結束上一個 session，否則舊的閒置計時器會送出幽靈通知。
+    expect(onSessionEnd).toHaveBeenCalledTimes(1);
   });
 
   it('pty:kill reports the end of the session through onSessionEnd', async () => {

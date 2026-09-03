@@ -112,13 +112,19 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'pty:start': async (path, opts) => {
       const dir = guard(path);
       const initialPrompt = checkInitialPrompt(opts.initialPrompt);
-      deps.pty.start({
-        cwd: dir,
-        command: 'claude',
-        args: buildClaudeArgs({ continue: opts.continue, initialPrompt }),
-        cols: clampSize(opts.cols, 80),
-        rows: clampSize(opts.rows, 24),
-      });
+      try {
+        deps.pty.start({
+          cwd: dir,
+          command: 'claude',
+          args: buildClaudeArgs({ continue: opts.continue, initialPrompt }),
+          cols: clampSize(opts.cols, 80),
+          rows: clampSize(opts.rows, 24),
+        });
+      } catch (e) {
+        // 失敗時也要收掉上一個 session，否則舊的閒置計時器會送出幽靈通知。
+        deps.onSessionEnd?.();
+        throw e;
+      }
       deps.onSessionStart?.(dir);
     },
 

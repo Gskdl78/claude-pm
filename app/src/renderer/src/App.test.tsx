@@ -284,6 +284,8 @@ describe('App', () => {
       openProject: vi.fn(async () => alpha),
     }, listeners);
     await renderApp(api);
+    // renderApp 已經動態載入過 App，這裡拿到的是同一個模組實例。
+    const { ENTER_DELAY_MS } = await import('./App');
     fireEvent.click(await screen.findByText('alpha'));
     const btn = await screen.findByRole('button', { name: /產品設計/ });
     expect(btn).toBeDisabled();
@@ -293,8 +295,17 @@ describe('App', () => {
     expect(btn).toBeEnabled();
     expect(screen.getByText('● 等待回覆')).toBeInTheDocument();
 
-    fireEvent.click(btn);
-    expect(api.pty.write).toHaveBeenCalledWith('/stage-design\r');
+    // 指令與 Enter 必須分開寫入，合成一段會被 Claude Code 當成貼上而不送出。
+    try {
+      vi.useFakeTimers();
+      fireEvent.click(btn);
+      expect(api.pty.write).toHaveBeenNthCalledWith(1, '/stage-design');
+      expect(api.pty.write).toHaveBeenCalledTimes(1);
+      act(() => { vi.advanceTimersByTime(ENTER_DELAY_MS); });
+      expect(api.pty.write).toHaveBeenNthCalledWith(2, '\r');
+    } finally {
+      vi.useRealTimers();
+    }
 
     act(() => { for (const cb of listeners.idle) cb(false); });
     expect(btn).toBeDisabled();
@@ -323,6 +334,26 @@ describe('App', () => {
     // 同一 stage 再送一次（例如 add-doc）不重複記錄
     act(() => { for (const cb of listeners.state) cb({ ...advanced }); });
     expect(screen.getAllByText(/^階段 /)).toHaveLength(1);
+  });
+
+  it('seeds the stage baseline from 重建 state so the next change is reported', async () => {
+    mockGitPanel();
+    const listeners: Listeners = { state: [], exit: [], idle: [] };
+    const alpha = projectAt('alpha', 'design');
+    const api = mockApi({
+      listProjects: vi.fn(async () => [alpha]),
+      openProject: vi.fn(async () => ({ ...alpha, state: null })),
+      rebuildState: vi.fn(async () => alpha),
+    }, listeners);
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    fireEvent.click(await screen.findByRole('button', { name: '重建 state' }));
+    await screen.findByRole('button', { name: /產品設計/ });
+
+    const advanced = projectAt('alpha', 'tech', 'pending');
+    advanced.state!.stages.design = { status: 'done', commit: 'abc1234' };
+    act(() => { for (const cb of listeners.state) cb(advanced); });
+    expect(screen.getByText('階段 產品設計 完成 → 技術設計')).toHaveClass('notice');
   });
 
   it('reports 全部完成 when the last stage finishes and does not compare across projects', async () => {

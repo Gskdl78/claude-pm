@@ -13,6 +13,12 @@ import { ClaudeMissing } from './components/ClaudeMissing';
 type Screen = 'loading' | 'claude-missing' | 'main';
 type PtyStatus = 'idle' | 'running' | 'exited';
 
+// 指令與 Enter 分成兩次寫入的間隔：一次送出「文字 + 換行」會被 Claude Code
+// 當成貼上而不送出，只會把 /stage-xxx 留在輸入框裡。
+export const ENTER_DELAY_MS = 50;
+// GitPanel 只需要 id 遞增，不需要完整歷史，所以提示只保留最近幾筆。
+const MAX_NOTICES = 50;
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -42,11 +48,9 @@ export default function App() {
     currentRef.current = p;
     setCurrent(p);
     if (!p) { lastStageRef.current = null; return; }
-    // 同一個專案第二次呼叫（openProject 先塞列表資料、再塞 openProject 結果）
-    // 不覆寫基準，否則 open 過程中的 state 事件會被誤判成階段切換。
-    if (lastStageRef.current?.path !== p.path) {
-      lastStageRef.current = p.state ? { path: p.path, stage: p.state.stage } : null;
-    }
+    // 每次都以最新資料為基準；onStateChanged 路徑會先呼叫 noteStageChange，
+    // 寫入的值相同，因此不會漏掉或重複提示。
+    lastStageRef.current = p.state ? { path: p.path, stage: p.state.stage } : null;
   }, []);
 
   // watcher 送來新 state 時比對階段：同一專案、階段真的往前走才記一筆提示並閃爍。
@@ -60,7 +64,7 @@ export default function App() {
     const from = STAGE_LABELS[last.stage];
     const to = next === 'done' ? '全部完成' : STAGE_LABELS[next];
     noticeId.current += 1;
-    setNotices((prev) => [...prev, { id: noticeId.current, text: `階段 ${from} 完成 → ${to}` }]);
+    setNotices((prev) => [...prev, { id: noticeId.current, text: `階段 ${from} 完成 → ${to}` }].slice(-MAX_NOTICES));
     setFlashSeq((n) => n + 1);
   }, []);
 
@@ -202,9 +206,11 @@ export default function App() {
   };
 
   // 只在 Claude Code 停在提示符時送，避免打斷正在輸出的回應。
+  // 指令與 Enter 分兩次寫入，否則整段會被當成貼上而不送出。
   const runStage = (stage: StageName) => {
     if (ptyStatus !== 'running' || !ptyIdle) return;
-    pm.pty.write(`/stage-${stage}\r`);
+    pm.pty.write(`/stage-${stage}`);
+    window.setTimeout(() => { pm.pty.write('\r'); }, ENTER_DELAY_MS);
   };
 
   if (screen === 'loading') return <div className="center muted">載入中…</div>;

@@ -23,7 +23,7 @@ describe('attention', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it('flashes and notifies once per idle period when unfocused', () => {
+  it('flashes and notifies when unfocused', () => {
     const win = fakeWin(false);
     const notify = vi.fn();
     const a = createAttention({ win, notify });
@@ -31,6 +31,9 @@ describe('attention', () => {
     expect(win.flashFrame).toHaveBeenCalledWith(true);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith('demo 等待你的回覆', '回到 claude-pm 繼續對話');
+    // 每個閒置期間只通知一次是 IdleDetector 的責任；attention 收到幾次就送幾次。
+    a.idle('demo');
+    expect(notify).toHaveBeenCalledTimes(2);
   });
 
   it('stops flashing on focus', () => {

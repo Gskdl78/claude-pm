@@ -65,6 +65,14 @@ describe('ProjectList stage pill', () => {
     expect(pills[0].closest('.project')).toHaveTextContent('gamma');
   });
 
+  it('shows both 未初始化 and the waiting pill on an uninitialised current project', () => {
+    const p: ProjectInfo = { name: 'zeta', path: 'C:\\P\\zeta', initialized: false, state: null };
+    render(<ProjectList projects={[p]} currentPath={p.path} waitingPath={p.path} onSelect={() => {}} onInit={() => {}} onNew={() => {}} />);
+    expect(screen.getByText('未初始化')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '初始化' })).toBeInTheDocument();
+    expect(screen.getByText('● 等待回覆')).toHaveClass('pill', 'waiting');
+  });
+
   it('shows no waiting pill when waitingPath is null', () => {
     const a: ProjectInfo = { name: 'gamma', path: 'C:\\P\\gamma', initialized: true, state: stateAt('design') };
     render(<ProjectList projects={[a]} currentPath={a.path} waitingPath={null} onSelect={() => {}} onInit={() => {}} onNew={() => {}} />);
