@@ -43,7 +43,7 @@ test('creates a project, shows stage panel, and restores it after relaunch', asy
 
     await page.getByRole('button', { name: '+ 新專案' }).click();
     await page.getByLabel('專案名稱').fill('e2e-demo');
-    await page.getByRole('button', { name: '建立' }).click();
+    await page.getByRole('button', { name: '建立', exact: true }).click();
 
     await expect(page.locator('.stage').getByText('環境搭建')).toBeVisible();
     await expect(page.locator('.xterm')).toBeVisible();

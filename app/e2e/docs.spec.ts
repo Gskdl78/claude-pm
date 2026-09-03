@@ -60,7 +60,7 @@ test('docs tab renders markdown with mermaid, navigates links and commits checkl
     // 用 App 自己的流程建立專案（scaffold 會 git init 並提交），再補上文件並提交。
     await page.getByRole('button', { name: '+ 新專案' }).click();
     await page.getByLabel('專案名稱').fill('docs-demo');
-    await page.getByRole('button', { name: '建立' }).click();
+    await page.getByRole('button', { name: '建立', exact: true }).click();
     await expect(page.locator('.stage').getByText('環境搭建')).toBeVisible();
 
     const dir = join(root, 'docs-demo');

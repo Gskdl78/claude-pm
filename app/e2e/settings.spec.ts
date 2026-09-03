@@ -57,7 +57,7 @@ test('settings dialog saves to config.json and new projects carry the model poli
     // 新專案的 CLAUDE.md 帶入設定的模型政策
     await page.getByRole('button', { name: '+ 新專案' }).click();
     await page.getByLabel('專案名稱').fill('policy-demo');
-    await page.getByRole('button', { name: '建立' }).click();
+    await page.getByRole('button', { name: '建立', exact: true }).click();
     await expect(page.locator('.stage').getByText('環境搭建')).toBeVisible();
     const claude = readFileSync(join(root, 'policy-demo', 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('實作 subagent：`sonnet`');

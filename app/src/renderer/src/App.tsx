@@ -277,6 +277,21 @@ export default function App() {
     }
   };
 
+  // 從網址或本機路徑複製：主程序只做 git clone，不初始化 pm；開啟後側欄仍可按「初始化」。
+  const handleClone = async (source: string, name: string) => {
+    setDialogBusy(true); setDialogError(null);
+    try {
+      const info = await pm.cloneProject(source, name);
+      await refreshProjects();
+      setDialogOpen(false);
+      await openProject(info);
+    } catch (e) {
+      setDialogError(errorMessage(e));
+    } finally {
+      setDialogBusy(false);
+    }
+  };
+
   const handleInit = async (p: ProjectInfo) => {
     setError(null);
     try {
@@ -414,7 +429,7 @@ export default function App() {
         <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight}
           revealCommit={revealCommit} stage={current?.state?.stage ?? null} />
       </aside>
-      <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
+      <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onClone={handleClone} onCancel={() => setDialogOpen(false)} />
       <ConfirmDialog
         request={closeReq ? {
           title: '關閉 session',

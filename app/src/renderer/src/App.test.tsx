@@ -799,3 +799,40 @@ describe('App (git panel polish)', () => {
     await waitFor(() => expect(screen.getByTestId('git-panel')).toHaveAttribute('data-stage', 'design'));
   });
 });
+
+describe('App (clone from url)', () => {
+  it('clones a project from the dialog, re-lists and opens it', async () => {
+    let listed = [project('alpha')];
+    const api = mockApi({
+      listProjects: vi.fn(async () => listed),
+      cloneProject: vi.fn(async (_source: string, name: string) => {
+        const p = { ...project(name), initialized: false, state: null };
+        listed = [...listed, p];
+        return p;
+      }),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '+ 新專案' }));
+    fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
+    fireEvent.change(screen.getByLabelText('來源網址或路徑'), { target: { value: 'https://github.com/a/my-repo.git' } });
+    expect(screen.getByLabelText('專案名稱')).toHaveValue('my-repo');
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    await waitFor(() => expect(api.cloneProject).toHaveBeenCalledWith('https://github.com/a/my-repo.git', 'my-repo'));
+    await waitFor(() => expect(api.openProject).toHaveBeenCalledWith('C:\\P\\my-repo'));
+    expect(api.listProjects).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '新專案' })).not.toBeInTheDocument());
+    expect(screen.getByText('my-repo', { selector: '.project .name' })).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open with the error when the clone fails', async () => {
+    const api = mockApi({ cloneProject: vi.fn(async () => { throw new Error("Error invoking remote method 'projects:clone': Error: invalid clone source"); }) });
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '+ 新專案' }));
+    fireEvent.click(screen.getByRole('button', { name: '從 URL 複製' }));
+    fireEvent.change(screen.getByLabelText('來源網址或路徑'), { target: { value: 'https://github.com/a/x.git' } });
+    fireEvent.click(screen.getByRole('button', { name: '複製' }));
+    expect(await screen.findByText('invalid clone source')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '新專案' })).toBeInTheDocument();
+    expect(api.openProject).not.toHaveBeenCalled();
+  });
+});
