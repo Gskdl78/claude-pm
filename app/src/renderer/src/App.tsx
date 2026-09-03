@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppConfig, GitCommit, ProjectInfo } from '../../shared/types';
+import type { AppConfig, GitCommit, Notice, ProjectInfo, StageName } from '../../shared/types';
+import { STAGE_LABELS } from '../../shared/types';
 import { pm } from './api';
 import { ProjectList } from './components/ProjectList';
 import { NewProjectDialog } from './components/NewProjectDialog';
@@ -25,15 +26,42 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [ptyIdle, setPtyIdle] = useState(false);
+  const [flashSeq, setFlashSeq] = useState(0);
+  const [notices, setNotices] = useState<Notice[]>([]);
 
   const currentRef = useRef<ProjectInfo | null>(null);
   const launchRef = useRef<{ usedContinue: boolean } | null>(null);
+  const noticeId = useRef(0);
+  // 上一次看到的 (專案路徑, stage)；只在同一專案內比較，切專案就重設
+  const lastStageRef = useRef<{ path: string; stage: StageName | 'done' } | null>(null);
 
   // currentRef must move in the same tick as the state, otherwise events that
   // arrive while openProject is awaiting are matched against a stale path.
   const setCurrentProject = useCallback((p: ProjectInfo | null) => {
     currentRef.current = p;
     setCurrent(p);
+    if (!p) { lastStageRef.current = null; return; }
+    // 同一個專案第二次呼叫（openProject 先塞列表資料、再塞 openProject 結果）
+    // 不覆寫基準，否則 open 過程中的 state 事件會被誤判成階段切換。
+    if (lastStageRef.current?.path !== p.path) {
+      lastStageRef.current = p.state ? { path: p.path, stage: p.state.stage } : null;
+    }
+  }, []);
+
+  // watcher 送來新 state 時比對階段：同一專案、階段真的往前走才記一筆提示並閃爍。
+  const noteStageChange = useCallback((p: ProjectInfo) => {
+    if (!p.state) return;
+    const last = lastStageRef.current;
+    if (!last || last.path !== p.path) return;
+    const next = p.state.stage;
+    if (last.stage === next || last.stage === 'done') { lastStageRef.current = { path: p.path, stage: next }; return; }
+    lastStageRef.current = { path: p.path, stage: next };
+    const from = STAGE_LABELS[last.stage];
+    const to = next === 'done' ? '全部完成' : STAGE_LABELS[next];
+    noticeId.current += 1;
+    setNotices((prev) => [...prev, { id: noticeId.current, text: `階段 ${from} 完成 → ${to}` }]);
+    setFlashSeq((n) => n + 1);
   }, []);
 
   const refreshProjects = useCallback(async () => {
@@ -54,10 +82,13 @@ export default function App() {
         rows: 30,
       });
     } catch (e) {
+      setPtyIdle(false);
       setPtyStatus('exited');
       setError(errorMessage(e));
       return;
     }
+    // 新 session 一定從忙碌開始；主行程也會再送一次 idle=false。
+    setPtyIdle(false);
     setPtyStatus('running');
     // Every launch gets a new pty at the fixed 120x30 above; bumping the seq
     // makes Terminal re-fit and resize it to the real viewport each time.
@@ -66,6 +97,7 @@ export default function App() {
 
   const openProject = useCallback(async (p: ProjectInfo) => {
     setError(null);
+    setPtyIdle(false);
     const prev = currentRef.current;
     setCurrentProject(p);
     try {
@@ -109,10 +141,13 @@ export default function App() {
   useEffect(() => {
     const offState = pm.onStateChanged((p) => {
       setProjects((prev) => prev.map((x) => (x.path === p.path ? p : x)));
-      if (currentRef.current?.path === p.path) setCurrentProject(p);
+      if (currentRef.current?.path === p.path) { noteStageChange(p); setCurrentProject(p); }
     });
     const offGit = pm.onGitChanged((c) => { setCommits(c); setGitRevision((n) => n + 1); });
+    // idle 是狀態不是邊緣事件：同一個值可能連送兩次，直接覆寫即可。
+    const offIdle = pm.pty.onIdle((idle) => setPtyIdle(idle));
     const offExit = pm.pty.onExit((code) => {
+      setPtyIdle(false);
       const l = launchRef.current;
       const cur = currentRef.current;
       // A --continue launch that fails always gets exactly one retry without
@@ -123,8 +158,8 @@ export default function App() {
       }
       setPtyStatus('exited');
     });
-    return () => { offState(); offGit(); offExit(); };
-  }, [launch, setCurrentProject]);
+    return () => { offState(); offGit(); offIdle(); offExit(); };
+  }, [launch, setCurrentProject, noteStageChange]);
 
   const handleNew = async (name: string) => {
     setDialogBusy(true); setDialogError(null);
@@ -166,6 +201,12 @@ export default function App() {
     if (current) void pm.openPath(`${current.path}\\${rel}`);
   };
 
+  // 只在 Claude Code 停在提示符時送，避免打斷正在輸出的回應。
+  const runStage = (stage: StageName) => {
+    if (ptyStatus !== 'running' || !ptyIdle) return;
+    pm.pty.write(`/stage-${stage}\r`);
+  };
+
   if (screen === 'loading') return <div className="center muted">載入中…</div>;
   if (screen === 'claude-missing') return <ClaudeMissing />;
 
@@ -173,15 +214,18 @@ export default function App() {
     <div className="app">
       <aside className="side">
         <div className="muted" title={config?.root}>{config?.root}</div>
-        <ProjectList projects={projects} currentPath={current?.path ?? null} onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }} />
+        <ProjectList projects={projects} currentPath={current?.path ?? null}
+          waitingPath={ptyIdle && ptyStatus === 'running' ? current?.path ?? null : null}
+          onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }} />
       </aside>
       <header className="stage">
         {error && <div className="error">{error}</div>}
-        <StagePanel project={current} onRebuild={handleRebuild} onOpenDoc={handleOpenDoc} />
+        <StagePanel project={current} canRun={ptyStatus === 'running' && ptyIdle} flashSeq={flashSeq}
+          onRebuild={handleRebuild} onOpenDoc={handleOpenDoc} onRunStage={runStage} />
       </header>
       <Terminal status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }} />
       <aside className="git">
-        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} />
+        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} />
       </aside>
       <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
     </div>
