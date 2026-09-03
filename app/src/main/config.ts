@@ -10,6 +10,10 @@ export function configPath(home: string = homedir()): string {
   return join(home, '.claude-pm', 'config.json');
 }
 
+export function pinnedNotesPath(home: string = homedir()): string {
+  return join(home, '.claude-pm', 'pinned-notes.md');
+}
+
 export function defaultConfig(): AppConfig {
   const preferred = 'C:\\Projects';
   const root = process.platform === 'win32' && existsSync(preferred) ? preferred : join(homedir(), 'Projects');
