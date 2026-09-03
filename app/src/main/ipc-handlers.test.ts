@@ -14,7 +14,7 @@ beforeAll(() => {
   });
 });
 
-function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty'>> = {}) {
+function setup(extra: Partial<Pick<HandlerDeps, 'onSessionStart' | 'onSessionEnd' | 'pty' | 'openExternal'>> = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pm-ipc-'));
   const root = join(base, 'root');
   mkdirSync(root);
@@ -197,5 +197,26 @@ describe('ipc handlers', () => {
     await h['pty:start'](created.path, { continue: false, cols: 80, rows: 24 });
     await h['pty:kill']();
     expect(onSessionEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('shell:openExternal only accepts http(s) and mailto', async () => {
+    const openExternal = vi.fn(async () => {});
+    const { h } = setup({ openExternal });
+    await h['shell:openExternal']('https://example.com/x');
+    await h['shell:openExternal']('mailto:a@b.c');
+    expect(openExternal).toHaveBeenCalledTimes(2);
+    for (const bad of ['file:///C:/x', 'javascript:alert(1)', 'ftp://x', '', 'https://' + 'a'.repeat(3000)]) {
+      await expect(h['shell:openExternal'](bad)).rejects.toThrow(/invalid url/);
+    }
+    expect(openExternal).toHaveBeenCalledTimes(2);
+  });
+
+  it('docs handlers are exposed and guarded', async () => {
+    const { h } = setup();
+    const created = await h['projects:create']('demo');
+    mkdirSync(join(created.path, 'docs'), { recursive: true });
+    writeFileSync(join(created.path, 'docs', 'a.md'), '# a');
+    expect((await h['docs:list'](created.path)).map((d) => d.rel)).toEqual(['docs/a.md']);
+    await expect(h['docs:read'](join(created.path, '..', '..', 'x'), 'docs/a.md')).rejects.toThrow();
   });
 });

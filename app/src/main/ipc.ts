@@ -18,6 +18,7 @@ export function registerIpc({ win, pty, pluginDir }: { win: BrowserWindow; pty: 
   const h = createHandlers({
     pluginDir, pty, send,
     openPath: (p) => shell.openPath(p),
+    openExternal: (u) => shell.openExternal(u),
     onSessionStart: (dir) => { label = basename(dir); idle.reset(); send('pty:idle', false); },
     onSessionEnd: () => { idle.reset(); send('pty:idle', false); },
   });

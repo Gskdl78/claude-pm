@@ -162,6 +162,12 @@ export interface GhApi {
   repoCreate(path: string, name: string, isPrivate: boolean): Promise<GitResult>;
 }
 
+export interface DocsApi {
+  list(path: string): Promise<DocEntry[]>;
+  read(path: string, rel: string): Promise<string>;
+  write(path: string, rel: string, content: string): Promise<void>;
+}
+
 export interface PmApi {
   getConfig(): Promise<AppConfig>;
   setRoot(root: string): Promise<AppConfig>;
@@ -175,6 +181,11 @@ export interface PmApi {
   openPath(path: string): Promise<string>;
   git: GitApi;
   gh: GhApi;
+  docs: DocsApi;
+  /** 只開 http(s) / mailto；其他一律拒絕 */
+  openExternal(url: string): Promise<void>;
+  /** docs/**\/*.md 有新增、刪除或修改（每 2 秒比對一次） */
+  onDocsChanged(cb: () => void): () => void;
   pty: {
     start(path: string, opts: PtyStartOptions): Promise<void>;
     write(data: string): void;
