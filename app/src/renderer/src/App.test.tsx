@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import type { GitCommit, PmApi, ProjectInfo, StageName } from '../../shared/types';
+import { DEFAULT_SETTINGS } from '../../shared/config-schema';
+
+const CFG = { root: 'C:\\P', lastProject: null as string | null, recent: [] as string[], ...DEFAULT_SETTINGS };
 
 vi.mock('./components/Terminal', () => ({
-  Terminal: ({ status, onRestart, visible = true }: { status: string; onRestart: () => void; visible?: boolean }) => (
-    <div data-testid="terminal" data-status={status} hidden={!visible}><button onClick={onRestart}>重新啟動</button></div>
+  Terminal: ({ status, launchSeq, onRestart, visible = true }: { status: string; launchSeq: number; onRestart: () => void; visible?: boolean }) => (
+    <div data-testid="terminal" data-status={status} data-launch={launchSeq} hidden={!visible}><button onClick={onRestart}>重新啟動</button></div>
   ),
 }));
 
@@ -41,8 +44,10 @@ type Listeners = { state: Array<(p: ProjectInfo) => void>; exit: Array<(c: numbe
 
 function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state: [], exit: [], idle: [], docs: [] }): PmApi {
   const api: PmApi = {
-    getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: null, recent: [] })),
+    getConfig: vi.fn(async () => ({ ...CFG, lastProject: null })),
     setRoot: vi.fn(),
+    updateConfig: vi.fn(async (patch) => ({ ...CFG, ...patch })),
+    pickFolder: vi.fn(async () => null),
     checkClaude: vi.fn(async () => ({ ok: true, path: 'claude' })),
     listProjects: vi.fn(async () => [project('alpha')]),
     createProject: vi.fn(async (name: string) => project(name)),
@@ -113,7 +118,7 @@ describe('App', () => {
   it('auto-opens lastProject with --continue and falls back when continue exits early', async () => {
     const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({
-      getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
+      getConfig: vi.fn(async () => ({ ...CFG, lastProject: 'C:\\P\\beta' })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
       openProject: vi.fn(async () => project('beta', 'done')),
     }, listeners);
@@ -158,7 +163,7 @@ describe('App', () => {
   it('falls back once without --continue when a continue launch fails late', async () => {
     const listeners: Listeners = { state: [], exit: [], idle: [], docs: [] };
     const api = mockApi({
-      getConfig: vi.fn(async () => ({ root: 'C:\\P', lastProject: 'C:\\P\\beta', recent: [] })),
+      getConfig: vi.fn(async () => ({ ...CFG, lastProject: 'C:\\P\\beta' })),
       listProjects: vi.fn(async () => [project('beta', 'done')]),
       openProject: vi.fn(async () => project('beta', 'done')),
     }, listeners);
@@ -451,5 +456,69 @@ describe('App', () => {
     fireEvent.click(screen.getByText('beta'));
     await waitFor(() => expect(screen.getByRole('tab', { name: '終端機' })).toHaveAttribute('aria-selected', 'true'));
     expect(screen.queryByText('docs/product/prd.md', { selector: '.center-title' })).toBeNull();
+  });
+
+  it('opens settings, saves non-root fields and applies them', async () => {
+    const api = mockApi();
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '設定' }));
+    fireEvent.change(screen.getByLabelText('終端機字型大小'), { target: { value: '18' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    await waitFor(() => expect(api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({ termFontSize: 18 })));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.setRoot).not.toHaveBeenCalled();
+    expect(api.pty.kill).not.toHaveBeenCalled();
+  });
+
+  it('changing root closes the current project, kills the pty and reloads the list', async () => {
+    // 主行程的 updateConfig 回傳完整設定（含剛換掉的 root），mock 要跟著記住它
+    let root = CFG.root;
+    const api = mockApi({
+      setRoot: vi.fn(async (r: string) => { root = r; return { ...CFG, root }; }),
+      updateConfig: vi.fn(async (patch) => ({ ...CFG, root, ...patch })),
+      listProjects: vi.fn(async () => [project('alpha')]),
+    });
+    await renderApp(api);
+    fireEvent.click(await screen.findByText('alpha'));
+    await screen.findAllByText(/環境搭建/);   // StagePanel 同時有標題與按鈕，只要等專案開好
+    const seq = Number(screen.getByTestId('terminal').getAttribute('data-launch'));
+    fireEvent.click(screen.getByRole('button', { name: '設定' }));
+    fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    await waitFor(() => expect(api.setRoot).toHaveBeenCalledWith('D:\\Other'));
+    await waitFor(() => expect(api.pty.kill).toHaveBeenCalled());
+    await waitFor(() => expect(api.listProjects).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('選擇或建立一個專案')).toBeInTheDocument();
+    expect(screen.getByText('D:\\Other')).toBeInTheDocument();
+    // 換根目錄就是換 session：終端機要收到新的 launchSeq 才會清掉舊專案的畫面
+    expect(Number(screen.getByTestId('terminal').getAttribute('data-launch'))).toBeGreaterThan(seq);
+  });
+
+  it('keeps the new root when updateConfig fails after setRoot', async () => {
+    const api = mockApi({
+      setRoot: vi.fn(async () => ({ ...CFG, root: 'D:\\Other' })),
+      updateConfig: vi.fn(async () => { throw new Error('disk full'); }),
+    });
+    await renderApp(api);
+    await screen.findByText('alpha');
+    fireEvent.click(screen.getByRole('button', { name: '設定' }));
+    fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Other' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    // 根目錄已經換掉了：對話框留著顯示錯誤，但畫面必須跟著新的根目錄走
+    expect(await screen.findByText('disk full')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('D:\\Other')).toBeInTheDocument();
+    expect(api.listProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the dialog open with the error when setRoot fails', async () => {
+    const api = mockApi({ setRoot: vi.fn(async () => { throw new Error('root not found: D:\\Nope'); }) });
+    await renderApp(api);
+    fireEvent.click(await screen.findByRole('button', { name: '設定' }));
+    fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\Nope' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存' }));
+    expect(await screen.findByText('root not found: D:\\Nope')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(api.updateConfig).not.toHaveBeenCalled();
   });
 });

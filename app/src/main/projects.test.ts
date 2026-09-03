@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { listProjects, readProjectInfo, createProject, initExisting, rebuildState, NAME_RE } from './projects';
+import { listProjects, readProjectInfo, createProject, initExisting, rebuildState, scaffoldArgs, NAME_RE } from './projects';
 
 const PLUGIN_DIR = resolve(__dirname, '../../../plugin');
 const tmp = () => mkdtempSync(join(tmpdir(), 'pm-proj-'));
@@ -83,5 +83,15 @@ describe('createProject / initExisting / rebuildState', () => {
     const info = await rebuildState(join(root, 'fix'), PLUGIN_DIR);
     expect(info.state?.stage).toBe('env');
     expect(info.stateError).toBeUndefined();
+  });
+
+  it('passes model vars to scaffold so CLAUDE.md reflects them', async () => {
+    const root = tmp();
+    await createProject(root, 'policy', PLUGIN_DIR, { implModel: 'sonnet', reviewModel: 'opus', maxRetries: 5 });
+    const claude = readFileSync(join(root, 'policy', 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('實作 subagent：`sonnet`');
+    expect(claude).toContain('審核退回上限 5 次');
+    expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2 })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2']);
+    expect(scaffoldArgs()).toEqual([]);
   });
 });

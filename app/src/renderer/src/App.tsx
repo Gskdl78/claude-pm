@@ -10,6 +10,7 @@ import { CenterPane, type CenterTab } from './components/CenterPane';
 import { isDocRelPath } from '../../shared/docs-path';
 import { errorMessage } from './errors';
 import { ClaudeMissing } from './components/ClaudeMissing';
+import { SettingsDialog, type SettingsSubmit } from './components/SettingsDialog';
 
 type Screen = 'loading' | 'claude-missing' | 'main';
 type PtyStatus = 'idle' | 'running' | 'exited';
@@ -39,6 +40,11 @@ export default function App() {
   const [centerTab, setCenterTab] = useState<CenterTab>('terminal');
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [docsRevision, setDocsRevision] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  // 設定對話框關閉（儲存或取消）時遞增，讓終端機把焦點要回來
+  const [focusSeq, setFocusSeq] = useState(0);
 
   const currentRef = useRef<ProjectInfo | null>(null);
   const launchRef = useRef<{ usedContinue: boolean } | null>(null);
@@ -202,6 +208,37 @@ export default function App() {
     }
   };
 
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setFocusSeq((n) => n + 1);
+  }, []);
+
+  // 改根目錄要先關掉目前專案（結束 Claude Code session）並重讀清單，才寫其他設定：
+  // 換根目錄已經生效，之後的 updateConfig 失敗時畫面仍要跟主行程一致。
+  const saveSettings = async ({ root, patch }: SettingsSubmit) => {
+    if (!config) return;
+    setSettingsBusy(true); setSettingsError(null);
+    try {
+      if (root !== config.root) {
+        setConfig(await pm.setRoot(root));
+        await pm.pty.kill();
+        setPtyStatus('idle'); setPtyIdle(false);
+        setCurrentProject(null); setCommits([]);
+        setCenterTab('terminal'); setSelectedDoc(null);
+        // 換專案就是換 session：遞增 launchSeq 讓終端機清掉上一個專案的畫面。
+        setLaunchSeq((n) => n + 1);
+        await refreshProjects();
+      }
+      const cfg = await pm.updateConfig(patch);
+      setConfig(cfg);
+      closeSettings();
+    } catch (e) {
+      setSettingsError(errorMessage(e));
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+
   const handleRebuild = async () => {
     if (!current) return;
     try {
@@ -238,7 +275,10 @@ export default function App() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="muted" title={config?.root}>{config?.root}</div>
+        <div className="side-head">
+          <div className="muted" title={config?.root}>{config?.root}</div>
+          <button className="gear" aria-label="設定" title="設定" onClick={() => { setSettingsError(null); setSettingsOpen(true); }}>⚙</button>
+        </div>
         <ProjectList projects={projects} currentPath={current?.path ?? null}
           waitingPath={ptyIdle && ptyStatus === 'running' ? current?.path ?? null : null}
           onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }} />
@@ -252,11 +292,16 @@ export default function App() {
         status={ptyStatus} launchSeq={launchSeq} onRestart={() => { if (current) void launch(current, true); }}
         path={current?.path ?? null}
         stageDocs={current?.state && current.state.stage !== 'done' ? current.state.stages[current.state.stage].docs ?? [] : []}
-        selectedDoc={selectedDoc} onSelectDoc={setSelectedDoc} docsRevision={docsRevision} onNotice={pushNotice} />
+        selectedDoc={selectedDoc} onSelectDoc={setSelectedDoc} docsRevision={docsRevision} onNotice={pushNotice}
+        fontSize={config?.termFontSize ?? 14} focusSeq={focusSeq} />
       <aside className="git">
-        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} />
+        <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight} />
       </aside>
       <NewProjectDialog open={dialogOpen} busy={dialogBusy} error={dialogError} onSubmit={handleNew} onCancel={() => setDialogOpen(false)} />
+      {config && (
+        <SettingsDialog open={settingsOpen} config={config} busy={settingsBusy} error={settingsError}
+          onPickFolder={() => pm.pickFolder()} onSave={(s) => { void saveSettings(s); }} onCancel={closeSettings} />
+      )}
     </div>
   );
 }

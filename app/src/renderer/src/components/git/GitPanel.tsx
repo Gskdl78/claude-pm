@@ -36,6 +36,8 @@ interface Props {
   revision: number;
   /** 來自 App 的提示（階段切換等），每筆只寫進輸出區一次 */
   notices?: Notice[];
+  /** 設定裡的資訊框預設高度；使用者拖過的高度優先 */
+  defaultLogHeight?: number;
 }
 
 type Pending =
@@ -44,7 +46,7 @@ type Pending =
   | { request: ConfirmRequest; publish: PublishChoice };
 interface Viewer { title: string; text: string }
 
-export function GitPanel({ path, commits, revision, notices = NO_NOTICES }: Props) {
+export function GitPanel({ path, commits, revision, notices = NO_NOTICES, defaultLogHeight }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [branches, setBranches] = useState<GitBranches>(EMPTY_BRANCHES);
@@ -68,7 +70,7 @@ export function GitPanel({ path, commits, revision, notices = NO_NOTICES }: Prop
   const extrasSeqRef = useRef(0);
   const statusErrorRef = useRef<string | null>(null);
   const pathRef = useRef(path);
-  const [logHeight, setLogHeight] = useLogHeight();
+  const [logHeight, setLogHeight] = useLogHeight(defaultLogHeight);
   const logId = useRef(0);
   pathRef.current = path;
 

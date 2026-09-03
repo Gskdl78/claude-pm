@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { AppConfig } from '../shared/types';
+import { DEFAULT_SETTINGS, normalizeConfig } from '../shared/config-schema';
 
 const MAX_RECENT = 10;
 
@@ -12,19 +13,14 @@ export function configPath(home: string = homedir()): string {
 export function defaultConfig(): AppConfig {
   const preferred = 'C:\\Projects';
   const root = process.platform === 'win32' && existsSync(preferred) ? preferred : join(homedir(), 'Projects');
-  return { root, lastProject: null, recent: [] };
+  return { root, lastProject: null, recent: [], ...DEFAULT_SETTINGS };
 }
 
 export function loadConfig(file: string = configPath()): AppConfig {
   const base = defaultConfig();
   if (!existsSync(file)) return base;
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<AppConfig>;
-    return {
-      root: typeof raw.root === 'string' && raw.root ? raw.root : base.root,
-      lastProject: typeof raw.lastProject === 'string' ? raw.lastProject : null,
-      recent: Array.isArray(raw.recent) ? raw.recent.filter((r): r is string => typeof r === 'string') : [],
-    };
+    return normalizeConfig(JSON.parse(readFileSync(file, 'utf8')), base);
   } catch {
     return base;
   }

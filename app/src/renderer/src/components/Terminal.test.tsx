@@ -8,6 +8,7 @@ let keyHandler: KeyHandler = () => true;
 const term = {
   cols: 80,
   rows: 24,
+  options: {} as Record<string, unknown>,
   loadAddon: vi.fn(),
   open: vi.fn(),
   write: vi.fn(),
@@ -207,5 +208,34 @@ describe('Terminal', () => {
     render(<Terminal status="idle" launchSeq={0} onRestart={() => {}} />);
     expect(term.focus).not.toHaveBeenCalled();
     expect(resize).not.toHaveBeenCalled();
+  });
+
+  it('takes the focus back when focusSeq is bumped, but not while hidden', () => {
+    const { rerender } = render(<Terminal status="running" launchSeq={1} onRestart={() => {}} focusSeq={0} />);
+    term.focus.mockClear();   // 掛載時 [status, launchSeq] 那個 effect 已經搶過一次
+
+    rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} focusSeq={1} />);
+    expect(term.focus).toHaveBeenCalledTimes(1);
+
+    // 停在文件分頁時關掉對話框，焦點不該被搶回隱藏的終端機
+    rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} focusSeq={1} visible={false} />);
+    term.focus.mockClear();
+    rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} focusSeq={2} visible={false} />);
+    expect(term.focus).not.toHaveBeenCalled();
+  });
+
+  it('does not take the focus on mount just because focusSeq is non-zero', () => {
+    term.focus.mockClear();
+    render(<Terminal status="exited" launchSeq={0} onRestart={() => {}} focusSeq={7} />);
+    expect(term.focus).not.toHaveBeenCalled();
+  });
+
+  it('applies fontSize changes to xterm and refits', () => {
+    const { rerender } = render(<Terminal status="running" launchSeq={1} onRestart={() => {}} fontSize={14} />);
+    expect(term.options.fontSize).toBe(14);
+    (window as unknown as { pm: PmApi }).pm.pty.resize = vi.fn();
+    rerender(<Terminal status="running" launchSeq={1} onRestart={() => {}} fontSize={18} />);
+    expect(term.options.fontSize).toBe(18);
+    expect((window as unknown as { pm: PmApi }).pm.pty.resize).toHaveBeenCalledWith(80, 24);
   });
 });

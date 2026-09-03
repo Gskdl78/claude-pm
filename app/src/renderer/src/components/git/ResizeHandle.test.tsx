@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, renderHook, act } from '@testing-library/react';
 import { DEFAULT_LOG_HEIGHT, LOG_HEIGHT_KEY, ResizeHandle, useLogHeight } from './ResizeHandle';
 
 /** 用 useLogHeight 驅動的最小面板，行為與 GitPanel 相同。 */
@@ -92,6 +92,17 @@ describe('ResizeHandle', () => {
     window.localStorage.setItem(LOG_HEIGHT_KEY, 'nope');
     render(<Host />);
     expect(logHeight()).toBe(`${DEFAULT_LOG_HEIGHT}px`);
+  });
+
+  it('useLogHeight uses the given default only when nothing is stored', () => {
+    window.localStorage.removeItem(LOG_HEIGHT_KEY);
+    const { result, rerender } = renderHook(({ d }) => useLogHeight(d), { initialProps: { d: 200 } });
+    expect(result.current[0]).toBe(200);
+    rerender({ d: 240 });
+    expect(result.current[0]).toBe(240);
+    act(() => result.current[1](300));
+    rerender({ d: 260 });
+    expect(result.current[0]).toBe(300);
   });
 
   it('does not throw when localStorage reads and writes fail', () => {

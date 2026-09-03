@@ -8,7 +8,7 @@ Claude Code 五階段開發流程 plugin：環境搭建 → 產品設計 → 技
 node plugin/scripts/scaffold.mjs C:/Projects/my-app
 ```
 
-用法：`node plugin/scripts/scaffold.mjs <targetDir> [name] [--no-git]`。`[name]` 省略時取 `targetDir` 的資料夾名（英數開頭，僅允許英數 `.` `_` `-`，最長 64，不可為 Windows 保留名稱）；`--no-git` 只種檔案，不做 `git init` 與第一個 commit。
+用法：`node plugin/scripts/scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=<name>] [--review-model=<name>] [--max-retries=<1-10>]`。`[name]` 省略時取 `targetDir` 的資料夾名（英數開頭，僅允許英數 `.` `_` `-`，最長 64，不可為 Windows 保留名稱）；`--no-git` 只種檔案，不做 `git init` 與第一個 commit。三個模型政策旗標會寫進種入的 `CLAUDE.md`：模型名稱限小寫英數與 `.` `-`，最長 32，`--max-retries` 限 1–10 的整數，不合格就直接報錯；省略時用預設 `opus` / `fable` / `3`，App 建立或初始化專案時會把「設定」裡的值以這三個旗標傳進來。
 
 會建立：`.claude/skills/*`、`.pm/`（狀態檔與工具）、`CLAUDE.md`、`.gitignore`，並 `git init` + 第一個 commit（只提交上述種入的檔案，不會動到你既有的未提交變更）。
 

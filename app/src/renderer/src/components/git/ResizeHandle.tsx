@@ -14,23 +14,27 @@ function clamp(height: number, panelHeight: number): number {
   return Math.round(Math.min(max, Math.max(MIN_HEIGHT, height)));
 }
 
-/** localStorage 在部分環境（隱私模式、被停用）會丟例外，一律吞掉回到預設值。 */
-function readHeight(): number {
+/** localStorage 在部分環境（隱私模式、被停用）會丟例外，一律吞掉當成沒有存過。 */
+function readStored(): number | null {
   try {
     const raw = window.localStorage.getItem(LOG_HEIGHT_KEY);
     const n = raw === null ? NaN : Number(raw);
-    return Number.isFinite(n) && n >= MIN_HEIGHT ? n : DEFAULT_LOG_HEIGHT;
+    return Number.isFinite(n) && n >= MIN_HEIGHT ? n : null;
   } catch {
-    return DEFAULT_LOG_HEIGHT;
+    return null;
   }
 }
 
-/** 輸出區高度 + 寫回 localStorage。 */
-export function useLogHeight(): [number, (height: number) => void] {
-  const [height, setHeight] = useState(readHeight);
-  useEffect(() => {
-    try { window.localStorage.setItem(LOG_HEIGHT_KEY, String(height)); } catch { /* 存不進去就算了 */ }
-  }, [height]);
+/** 輸出區高度：使用者拖過（localStorage 有值）優先，否則用設定的預設高度。 */
+export function useLogHeight(defaultHeight: number = DEFAULT_LOG_HEIGHT): [number, (height: number) => void] {
+  const stored = useRef(readStored());
+  const [height, setHeightState] = useState(stored.current ?? defaultHeight);
+  useEffect(() => { if (stored.current === null) setHeightState(defaultHeight); }, [defaultHeight]);
+  const setHeight = useCallback((h: number) => {
+    stored.current = h;
+    setHeightState(h);
+    try { window.localStorage.setItem(LOG_HEIGHT_KEY, String(h)); } catch { /* 存不進去就算了 */ }
+  }, []);
   return [height, setHeight];
 }
 

@@ -15,10 +15,14 @@ interface Props {
   onSelectDoc: (rel: string | null) => void;
   docsRevision: number;
   onNotice: (text: string, kind?: 'hint' | 'error') => void;
+  /** 設定裡的終端機字型大小 */
+  fontSize?: number;
+  /** 對話框關閉時遞增，轉給 Terminal 把焦點要回來 */
+  focusSeq?: number;
 }
 
 /** 中間區域：終端機與文件兩個分頁；兩者都常駐，只切換 hidden（xterm 不能卸載）。 */
-export function CenterPane({ tab, onTab, status, launchSeq, onRestart, path, stageDocs, selectedDoc, onSelectDoc, docsRevision, onNotice }: Props) {
+export function CenterPane({ tab, onTab, status, launchSeq, onRestart, path, stageDocs, selectedDoc, onSelectDoc, docsRevision, onNotice, fontSize, focusSeq }: Props) {
   const tabButton = (id: CenterTab, label: string) => (
     <button role="tab" aria-selected={tab === id} className={`center-tab${tab === id ? ' active' : ''}`} onClick={() => onTab(id)}>{label}</button>
   );
@@ -30,7 +34,7 @@ export function CenterPane({ tab, onTab, status, launchSeq, onRestart, path, sta
         {tab === 'docs' && selectedDoc && <span className="muted center-title" title={selectedDoc}>{selectedDoc}</span>}
       </div>
       <div className="center-body">
-        <Terminal visible={tab === 'terminal'} status={status} launchSeq={launchSeq} onRestart={onRestart} />
+        <Terminal visible={tab === 'terminal'} status={status} launchSeq={launchSeq} onRestart={onRestart} fontSize={fontSize} focusSeq={focusSeq} />
         <DocsTab hidden={tab !== 'docs'} path={path} stageDocs={stageDocs} selected={selectedDoc} onSelect={onSelectDoc} docsRevision={docsRevision} onNotice={onNotice} />
       </div>
     </section>

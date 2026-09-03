@@ -1,6 +1,6 @@
 ---
 name: stage-verify
-description: 階段 5 人工驗證。產出人工測試清單，接收使用者回報的問題，逐一記錄 issue、派 subagent 修正（opus 實作、fable 審核）並 commit，直到使用者確認驗證完成。
+description: 階段 5 人工驗證。產出人工測試清單，接收使用者回報的問題，逐一記錄 issue、依 CLAUDE.md 模型政策派 subagent 修正與審核並 commit，直到使用者確認驗證完成。
 ---
 
 # 階段 5：人工驗證
@@ -16,7 +16,7 @@ description: 階段 5 人工驗證。產出人工測試清單，接收使用者�
    b. 用 AskUserQuestion 問 `reason` 裡那個被卡住的 issue `<id>` 要「重試」還是「結案」：
       - 重試：回到步驟 B.2 重派修正，該 issue 的退回次數計數器歸零（重新從第 1 次算起）。
       - 結案：執行 `node .pm/pm-state.mjs update-issue <id> --fix "手動處理"`，然後繼續處理其他回報。
-3. 讀 CLAUDE.md、`docs/product/prd.md`、`docs/tech/tasks.md`。取專案絕對路徑：`pwd -W`（Git Bash 會印出 Windows 原生路徑；非 Windows 用 `pwd`）。
+3. 讀 CLAUDE.md「模型政策」節取得實作模型、審核模型與審核退回上限，再讀 `docs/product/prd.md`、`docs/tech/tasks.md`。取專案絕對路徑：`pwd -W`（Git Bash 會印出 Windows 原生路徑；非 Windows 用 `pwd`）。
 
 ## 步驟 A：產出清單（若 `docs/verify/checklist.md` 已存在則跳到步驟 B）
 依 PRD 的核心使用流程與 tasks.md 每個任務的驗收條件，寫 `docs/verify/checklist.md`：
@@ -40,7 +40,7 @@ git commit -m "docs(verify): 產出驗證清單"
 
 ## 步驟 B：處理每一個回報的問題
 1. 記錄：`node .pm/pm-state.mjs add-issue --stage verify --symptom "<使用者描述>"`，記下 id。
-2. **修正**：派 subagent，model `opus`（涉及認證、權限、資料遺失、加密則 `fable`）。Prompt：
+2. **修正**：派 subagent，model 依 CLAUDE.md「模型政策」節的實作模型（預設 `opus`）；涉及認證、權限、資料遺失、加密時改用審核模型（預設 `fable`）。Prompt：
    ```
    你在專案 <絕對路徑> 工作。先讀 CLAUDE.md。使用者在人工驗證時回報：
 
@@ -49,7 +49,7 @@ git commit -m "docs(verify): 產出驗證清單"
    請：先寫一個能重現此問題的失敗測試並執行確認失敗；找出根因；做最小修正；執行完整測試通過。不要 commit。
    回報：根因（一句）、修法（一句）、改了哪些檔案、測試輸出摘要。
    ```
-3. **審核**：派 model `fable` 的 subagent。Prompt：
+3. **審核**：派 model 為 CLAUDE.md 審核模型（預設 `fable`）的 subagent。Prompt：
    ```
    你是審核者，專案在 <絕對路徑>。使用者回報的問題：
 
@@ -63,7 +63,7 @@ git commit -m "docs(verify): 產出驗證清單"
    回覆第一行必須是 `VERDICT: PASS` 或 `VERDICT: FAIL`，之後條列具體問題（檔案:行號、原因、修法）。
    ```
 4. **若 FAIL**：每一次退回都要記錄，不可只記最後一次。先做 a 的次數檢查，通過才往下做 b、c。
-   a. **次數上限檢查（第一個一定要做的動作）**：若這是該任務（issue）第 3 次 FAIL：記錄 issue / log（同 b）後執行 `node .pm/pm-state.mjs block verify --reason "issue <id> 修正 3 次未過"`，用 AskUserQuestion 詢問使用者如何處理，停止，不再往下（不得再派修正 subagent）。也就是同一個 issue 最多派 3 次修正（1 次初版 + 2 次修正），絕不派第 4 次。
+   a. **次數上限檢查（第一個一定要做的動作）**：N 為 CLAUDE.md「模型政策」節的審核退回上限（預設 3）。若這是該任務（issue）第 N 次 FAIL：記錄 issue / log（同 b）後執行 `node .pm/pm-state.mjs block verify --reason "issue <id> 修正 N 次未過"`（訊息裡的 N 換成實際數字，例如「issue 4 修正 3 次未過」），用 AskUserQuestion 詢問使用者如何處理，停止，不再往下（不得再派修正 subagent）。也就是同一個 issue 最多派 N 次修正（1 次初版 + N−1 次修正），絕不派第 N+1 次。
    b. 在 `docs/build/log.md` 追加：
       ```
       ## 驗證修正 issue <id> 退回 #<第幾次>

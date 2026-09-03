@@ -1,6 +1,6 @@
 ---
 name: stage-build
-description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagent 用 TDD 實作（預設 opus）、派 fable 審核、退回修正並記錄 issue、每任務一個 commit，全部完成後標記 build 完成。
+description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagent 用 TDD 實作、依 CLAUDE.md 模型政策派審核 subagent、退回修正並記錄 issue、每任務一個 commit，全部完成後標記 build 完成。
 ---
 
 # 階段 4：產品實現
@@ -11,7 +11,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
    - `stages.build.status` 是 `done`：告知已完成，建議 `/stage-verify`，停止。
    - `stages.build.status` 是 `blocked`：說明 `reason`，詢問使用者如何處理，同意後才繼續。
 2. 若 `stages.build.status` 是 `pending`，或是 `blocked` 且使用者已同意繼續，執行 `node .pm/pm-state.mjs start build`（此舉會清除 blocked 標記並設回 in_progress）。
-3. 讀 CLAUDE.md（模型政策、建置與測試指令）、`docs/tech/architecture.md`、`docs/tech/tasks.md`。
+3. 讀 CLAUDE.md「模型政策」節取得實作模型、審核模型與審核退回上限，以及建置與測試指令；再讀 `docs/tech/architecture.md`、`docs/tech/tasks.md`。
 4. 若 `docs/build/log.md` 不存在，建立並寫入 `# Build Log`。
 5. 取專案絕對路徑：`pwd -W`（Git Bash 會印出 Windows 原生路徑；非 Windows 用 `pwd`）。
 
@@ -19,7 +19,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
 依 tasks.md 順序，跳過「狀態: done」與「狀態: blocked（手動）」的任務。對每個任務 T<n>：
 
 1. 在 tasks.md 把該任務「狀態: pending」改為「狀態: in_progress」。
-2. **實作**：用 Agent 工具派 subagent。model 預設 `opus`；任務標題或說明含「重構」「認證」「權限」「加密」「遷移」或以「[security]」開頭時用 `fable`。Prompt：
+2. **實作**：用 Agent 工具派 subagent。model 依 CLAUDE.md「模型政策」節的實作模型（預設 `opus`）；任務標題或說明含「重構」「認證」「權限」「加密」「遷移」或以「[security]」開頭時改用審核模型（預設 `fable`）。Prompt：
    ```
    你在專案 <絕對路徑> 工作。先讀 CLAUDE.md 與 docs/tech/architecture.md，然後只實作下列任務：
 
@@ -31,7 +31,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
    - 遵守 architecture.md 的模組邊界與資料庫連線規範。
    - 完成後回報：改了哪些檔案、跑了什麼測試指令、輸出摘要、任何未解決的問題。
    ```
-3. **審核**：派 model `fable` 的 subagent。Prompt：
+3. **審核**：派 model 為 CLAUDE.md 審核模型（預設 `fable`）的 subagent。Prompt：
    ```
    你是審核者，專案在 <絕對路徑>。任務需求：
 
@@ -45,7 +45,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
    回覆第一行必須是 `VERDICT: PASS` 或 `VERDICT: FAIL`。之後條列具體問題：檔案:行號、為什麼錯、該怎麼改。PASS 時也列出可接受的小建議。
    ```
 4. **若 FAIL**：先做 a 的次數檢查，通過才往下做 b～e。
-   a. **次數上限檢查（第一個一定要做的動作）**：若這是該任務（issue）第 3 次 FAIL：記錄 issue（同 b）與 log（同 c）後執行 `node .pm/pm-state.mjs block build --reason "T<n> 審核 3 次未過"`，tasks.md 該任務改「狀態: blocked」，用 AskUserQuestion 詢問使用者（放寬驗收 / 拆任務 / 手動處理），停止，不再往下（不得再派修正 subagent）。也就是同一任務最多派 3 次實作（1 次初版 + 2 次修正），絕不派第 4 次。
+   a. **次數上限檢查（第一個一定要做的動作）**：N 為 CLAUDE.md「模型政策」節的審核退回上限（預設 3）。若這是該任務（issue）第 N 次 FAIL：記錄 issue（同 b）與 log（同 c）後執行 `node .pm/pm-state.mjs block build --reason "T<n> 審核 N 次未過"`（訊息裡的 N 換成實際數字，例如「T3 審核 3 次未過」），tasks.md 該任務改「狀態: blocked」，用 AskUserQuestion 詢問使用者（放寬驗收 / 拆任務 / 手動處理），停止，不再往下（不得再派修正 subagent）。也就是同一任務最多派 N 次實作（1 次初版 + N−1 次修正），絕不派第 N+1 次。
       停止之前，先依使用者的選擇改 tasks.md：
       - **放寬驗收**：依使用者寫的內容改寫該任務的「驗收」條目，並把「狀態」改回 `pending`。
       - **拆任務**：依使用者的拆法把該任務換成 `T<n>a`、`T<n>b`… 等項目，各自寫清楚說明 / 驗收 / 測試 / 依賴，「狀態」都設為 `pending`。

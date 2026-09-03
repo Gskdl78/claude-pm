@@ -27,11 +27,11 @@ input { font: inherit; color: inherit; background: var(--bg); border: 1px solid 
 .muted { color: var(--muted); }
 
 /* --- sidebar header: root path + new project ------------------------------ */
-.side > .muted {
-  display: block; padding: 2px 4px 8px; font-size: 12px;
+.side .side-head > .muted {
+  display: block; padding: 2px 4px; font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.side > .muted::before { content: "📁 "; }
+.side .side-head > .muted::before { content: "📁 "; }
 
 /* --- project list --------------------------------------------------------- */
 .projects { display: flex; flex-direction: column; gap: 4px; }
@@ -282,3 +282,17 @@ section.center { grid-area: term; display: flex; flex-direction: column; align-i
 .checklist label:hover { background: var(--hover); }
 .checklist label input { margin-top: 4px; }
 .checklist label.done { color: var(--muted); text-decoration: line-through; }
+
+/* --- settings dialog ---------------------------------------------------- */
+.settings { min-width: 420px; }
+.settings .field { display: flex; flex-direction: column; gap: 4px; }
+.settings .field .row { display: flex; gap: 6px; }
+.settings .field .row input { flex: 1; min-width: 0; }
+.settings select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+.settings input[type="number"] { width: 120px; }
+.settings .check { display: flex; align-items: center; gap: 8px; }
+.settings .muted { font-size: 12px; }
+.side-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.side-head > .muted { flex: 1; min-width: 0; }
+.gear { background: transparent; border: none; padding: 2px 6px; font-size: 14px; }
+.gear:hover { color: var(--accent); border: none; }

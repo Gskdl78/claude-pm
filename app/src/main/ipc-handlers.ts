@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import type { AppConfig, ClaudeCheck, GitCommit, ProjectInfo, PtyStartOptions } from '../shared/types';
+import type { AppConfig, ClaudeCheck, ConfigPatch, GitCommit, ProjectInfo, PtyStartOptions } from '../shared/types';
+import { validatePatch } from '../shared/config-schema';
 import { loadConfig, saveConfig, rememberProject } from './config';
 import { assertInsideRoot } from './paths';
 import { listProjects, readProjectInfo, createProject, initExisting, rebuildState } from './projects';
@@ -23,11 +24,17 @@ export interface HandlerDeps {
   onSessionStart?: (dir: string) => void;
   /** pty 被主動終止後呼叫；kill() 不會觸發 exit 事件，需由此清掉等待輸入狀態 */
   onSessionEnd?: () => void;
+  /** 系統資料夾選擇器；沒注入（測試）時 dialog:pickFolder 回 null */
+  pickFolder?: (defaultPath: string) => Promise<string | null>;
+  /** 每次設定持久化後呼叫，讓 ipc.ts 更新通知開關等快取 */
+  onConfigChanged?: (cfg: AppConfig) => void;
 }
 
 export interface Handlers extends GitHandlers, DocsHandlers {
   'config:get': () => Promise<AppConfig>;
   'config:setRoot': (root: string) => Promise<AppConfig>;
+  'config:update': (patch: ConfigPatch) => Promise<AppConfig>;
+  'dialog:pickFolder': () => Promise<string | null>;
   'claude:check': () => Promise<ClaudeCheck>;
   'projects:list': () => Promise<ProjectInfo[]>;
   'projects:create': (name: string) => Promise<ProjectInfo>;
@@ -63,8 +70,10 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   let cfg = loadConfig(deps.configFile);
   let watcher: ProjectWatcher | null = null;
 
-  const persist = (next: AppConfig) => { cfg = next; saveConfig(cfg, deps.configFile); };
+  // 先寫檔再換快取：寫檔失敗時記憶體裡的設定要維持和磁碟一致。
+  const persist = (next: AppConfig) => { saveConfig(next, deps.configFile); cfg = next; deps.onConfigChanged?.(cfg); };
   const guard = (p: string) => assertInsideRoot(cfg.root, p);
+  const modelVars = () => ({ implModel: cfg.implModel, reviewModel: cfg.reviewModel, maxRetries: cfg.maxRetries });
 
   const watch = (dir: string) => {
     watcher?.stop();
@@ -85,6 +94,10 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return cfg;
     },
 
+    'config:update': async (patch) => { persist({ ...cfg, ...validatePatch(patch) }); return cfg; },
+
+    'dialog:pickFolder': async () => (deps.pickFolder ? deps.pickFolder(cfg.root) : null),
+
     'claude:check': () => (deps.checkClaude ?? findClaude)(),
 
     'projects:list': async () => {
@@ -92,9 +105,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return listProjects(cfg.root);
     },
 
-    'projects:create': (name) => createProject(cfg.root, name, deps.pluginDir),
+    'projects:create': (name) => createProject(cfg.root, name, deps.pluginDir, modelVars()),
 
-    'projects:init': async (path) => initExisting(guard(path), deps.pluginDir),
+    'projects:init': async (path) => initExisting(guard(path), deps.pluginDir, modelVars()),
 
     'projects:open': async (path) => {
       const dir = guard(path);

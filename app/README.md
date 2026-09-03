@@ -18,13 +18,28 @@ npm run dist       # 產出 dist/claude-pm Setup x.y.z.exe 與 portable exe
 
 plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程序用 `getPluginDir()` 取得。
 
-## 設定檔
+## 設定
 
-`%USERPROFILE%\.claude-pm\config.json`：
+側欄上方的 ⚙ 開設定對話框：專案根目錄（可用資料夾選擇器）、預設實作模型 / 審核模型、審核退回上限、終端機字型大小、資訊框預設高度、Claude Code 等待輸入時是否閃爍並通知。儲存即生效並寫進 `%USERPROFILE%\.claude-pm\config.json`：
+
 ```json
-{ "root": "C:\\Projects", "lastProject": "C:\\Projects\\my-app", "recent": [] }
+{
+  "root": "C:\\Projects", "lastProject": "C:\\Projects\\my-app", "recent": [],
+  "implModel": "opus", "reviewModel": "fable", "maxRetries": 3,
+  "termFontSize": 14, "logHeight": 160, "notifyOnIdle": true
+}
 ```
-改 `root` 可換專案根目錄。
+
+- 模型與退回上限只影響之後「+ 新專案」或「初始化」產生的 CLAUDE.md（模型政策節），既有專案不動。
+- 改根目錄會關閉目前專案（結束 Claude Code session）並重新載入清單。
+- 資訊框高度：手動拖過的高度存在瀏覽器 localStorage，優先於設定的預設值。
+
+### 手動驗證
+
+1. ⚙ → 字型大小改 18 → 儲存：終端機立即變大且輸入正常。
+2. 關閉「等待輸入時閃爍並通知」→ 視窗切到背景等 Claude Code 提問：不閃、不通知；側欄仍顯示「● 等待回覆」。
+3. 實作模型改 sonnet、退回上限改 2 → 新建專案：其 CLAUDE.md 模型政策節顯示 `sonnet` 與「2 次」。
+4. 根目錄改到另一個資料夾：專案清單換成該資料夾內容，原專案關閉。
 
 ## Git 面板
 
