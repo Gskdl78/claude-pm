@@ -110,7 +110,7 @@ describe('GitPanel', () => {
     git.show.mockResolvedValue('commit abc1234\n+one');
     render(<GitPanel path={P} commits={[{ hash: 'abc1234', date: '2026-09-02T10:00:00+08:00', message: 'chore: init' }]} revision={0} />);
     fireEvent.click(await screen.findByRole('tab', { name: '歷史' }));
-    fireEvent.click(screen.getByRole('button', { name: /abc1234/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看提交：abc1234' }));
     await waitFor(() => expect(git.show).toHaveBeenCalledWith(P, 'abc1234'));
     expect(await screen.findByRole('dialog', { name: '提交：abc1234' })).toBeInTheDocument();
     expect(screen.getByText('+one')).toHaveClass('add');
