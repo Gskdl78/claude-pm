@@ -103,6 +103,8 @@ describe('adopt / promote / remove', () => {
     const r = await promoteSkill(p, 'foo', home);
     expect(r?.ok).toBe(true);
     expect(execFileSync('git', ['status', '--porcelain'], { cwd: p, encoding: 'utf8' }).trim()).toBe('');
+    expect(existsSync(join(projectSkillsDir(p), 'foo'))).toBe(false);
+    expect(existsSync(join(globalSkillsDir(home), 'foo', 'SKILL.md'))).toBe(true);
     expect(status(p, 'foo', home)).toBe('global');
   });
 
