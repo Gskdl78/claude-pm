@@ -57,7 +57,7 @@ test('takes a local skill through trial, adopt and promote to global', async () 
     const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, stdio: 'pipe' }).toString();
 
     // 取得 → 只有一個 skill，直接進報告頁
-    await page.getByRole('button', { name: '🧩 Skills' }).click();
+    await page.getByRole('button', { name: 'Skills' }).click();
     await page.getByRole('button', { name: '加入 skill' }).click();
     await page.getByLabel('skill 來源').fill(src);
     await page.getByRole('button', { name: '取得' }).click();

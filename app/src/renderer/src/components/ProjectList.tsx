@@ -56,8 +56,8 @@ export function ProjectList({ projects, currentPath, livePaths, waitingPaths, on
           </span>
         </div>
       ))}
-      <button className="insights-entry" onClick={onInsights}>📊 洞察</button>
-      <button className="insights-entry" onClick={onSkills}>🧩 Skills</button>
+      <button className="insights-entry" onClick={onInsights}>洞察</button>
+      <button className="insights-entry" onClick={onSkills}>Skills</button>
     </div>
   );
 }

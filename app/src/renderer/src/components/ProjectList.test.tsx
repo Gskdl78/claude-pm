@@ -22,7 +22,7 @@ describe('ProjectList', () => {
     expect(onInit).toHaveBeenCalledWith(projects[1]);
     fireEvent.click(screen.getByRole('button', { name: '+ 新專案' }));
     expect(onNew).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '📊 洞察' }));
+    fireEvent.click(screen.getByRole('button', { name: '洞察' }));
     expect(onInsights).toHaveBeenCalled();
   });
 
