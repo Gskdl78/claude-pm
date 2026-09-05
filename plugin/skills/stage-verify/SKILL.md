@@ -49,21 +49,21 @@ git commit -m "docs(verify): 產出驗證清單"
    請：先寫一個能重現此問題的失敗測試並執行確認失敗；找出根因；做最小修正；執行完整測試通過。不要 commit。
    回報：根因（一句）、修法（一句）、改了哪些檔案、測試輸出摘要。
    ```
-3. **審核**：派 model 為 CLAUDE.md 審核模型（預設 `fable`）的 subagent。Prompt：
+3. **機器閘門**：主 session 自己執行 CLAUDE.md 的測試指令（專案若有 typecheck / lint 也一起跑）。沒過就**不派審核 subagent**，當作一次退回照步驟 4 處理（步驟 4.c 交回修正 subagent 的內容改成失敗輸出），修正完回到本步驟重跑；通過才往下派審核。
+4. **審核**：派 model 為 CLAUDE.md 審核模型（預設 `fable`）的 subagent。**不要**把實作者的回報全文貼進 prompt——變更的事實在 `git diff`，貼回報只是把同一份內容再送一次。Prompt：
    ```
    你是審核者，專案在 <絕對路徑>。使用者回報的問題：
 
    <症狀原文>
 
-   實作者回報：
+   實作者說的根因與修法：<各一句>
+   實作者說改了這些檔案：<檔案清單，一行>
 
-   <回報全文>
-
-   請執行 `git diff`、跑完整測試、確認新增的測試確實重現原問題（把修正暫時還原應該會失敗）、確認沒有引入無關變更。
+   請執行 `git diff`、跑完整測試、確認新增的測試確實重現原問題（把修正暫時還原應該會失敗）、確認實際變更的檔案與上面的清單一致、確認沒有引入無關變更。
    回覆第一行必須是 `VERDICT: PASS` 或 `VERDICT: FAIL`，之後條列具體問題（檔案:行號、原因、修法）。
    ```
-4. **若 FAIL**：每一次退回都要記錄，不可只記最後一次。先做 a 的次數檢查，通過才往下做 b、c。
-   a. **次數上限檢查（第一個一定要做的動作）**：N 為 CLAUDE.md「模型政策」節的審核退回上限（預設 3）。若這是該任務（issue）第 N 次 FAIL：記錄 issue / log（同 b）後執行 `node .pm/pm-state.mjs block verify --reason "issue <id> 修正 N 次未過"`（訊息裡的 N 換成實際數字，例如「issue 4 修正 3 次未過」），用 AskUserQuestion 詢問使用者如何處理，停止，不再往下（不得再派修正 subagent）。也就是同一個 issue 最多派 N 次修正（1 次初版 + N−1 次修正），絕不派第 N+1 次。
+5. **若 FAIL**：每一次退回都要記錄，不可只記最後一次。先做 a 的次數檢查，通過才往下做 b、c。
+   a. **次數上限檢查（第一個一定要做的動作）**：N 為 CLAUDE.md「模型政策」節的審核退回上限（預設 3）。機器閘門（步驟 3）沒過與審核 FAIL 共用同一個計數器。若這是該任務（issue）第 N 次 FAIL：記錄 issue / log（同 b）後執行 `node .pm/pm-state.mjs block verify --reason "issue <id> 修正 N 次未過"`（訊息裡的 N 換成實際數字，例如「issue 4 修正 3 次未過」），用 AskUserQuestion 詢問使用者如何處理，停止，不再往下（不得再派修正 subagent）。也就是同一個 issue 最多派 N 次修正（1 次初版 + N−1 次修正），絕不派第 N+1 次。
    b. 在 `docs/build/log.md` 追加：
       ```
       ## 驗證修正 issue <id> 退回 #<第幾次>
@@ -72,16 +72,16 @@ git commit -m "docs(verify): 產出驗證清單"
       - 修法：<審核者建議的修法>
       ```
    c. 把審核者的問題全文交回修正 subagent 再修，回到步驟 3。
-5. PASS：
+6. PASS：
    ```bash
    git add -A
    git commit -m "fix(verify): <症狀摘要>" -m "Fixes: <症狀原文>"
    git rev-parse --short HEAD
    ```
    `node .pm/pm-state.mjs update-issue <id> --cause "<根因>" --fix "<修法>" --commit <sha>`。
-   （修正本身的 commit 只含程式與測試；紀錄留到步驟 6 一起提交。）
-6. 補紀錄並提交：在 `docs/build/log.md` 追加 `## 驗證修正 issue <id> — <sha>` 與症狀 / 根因 / 修法，在 checklist.md 對應項目後加 `（已修正 <sha>）`，然後 `git add -A && git commit -m "docs(verify): 更新清單"`——log.md 與 checklist.md 的這兩筆更新都落在這一個 commit 裡。
-7. 請使用者重測該項。
+   （修正本身的 commit 只含程式與測試；紀錄留到步驟 7 一起提交。）
+7. 補紀錄並提交：在 `docs/build/log.md` 追加 `## 驗證修正 issue <id> — <sha>` 與症狀 / 根因 / 修法，在 checklist.md 對應項目後加 `（已修正 <sha>）`，然後 `git add -A && git commit -m "docs(verify): 更新清單"`——log.md 與 checklist.md 的這兩筆更新都落在這一個 commit 裡。
+8. 請使用者重測該項。
 
 ## 步驟 C：完成
 使用者說「驗證完成」時：

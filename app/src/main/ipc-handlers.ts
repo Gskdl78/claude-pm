@@ -91,7 +91,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   const guard = (p: string) => assertInsideRoot(cfg.root, p);
   const pinnedFile = deps.pinnedFile ?? pinnedNotesPath();
   const modelVars = () => ({
-    implModel: cfg.implModel, reviewModel: cfg.reviewModel, maxRetries: cfg.maxRetries,
+    implModel: cfg.implModel, reviewModel: cfg.reviewModel, smallModel: cfg.smallModel, maxRetries: cfg.maxRetries,
     ...(existsSync(pinnedFile) ? { pinnedFile } : {}),
   });
 

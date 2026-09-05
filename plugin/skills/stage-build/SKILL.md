@@ -11,7 +11,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
    - `stages.build.status` 是 `done`：告知已完成，建議 `/stage-verify`，停止。
    - `stages.build.status` 是 `blocked`：說明 `reason`，詢問使用者如何處理，同意後才繼續。
 2. 若 `stages.build.status` 是 `pending`，或是 `blocked` 且使用者已同意繼續，執行 `node .pm/pm-state.mjs start build`（此舉會清除 blocked 標記並設回 in_progress）。
-3. 讀 CLAUDE.md「模型政策」節取得實作模型、審核模型與審核退回上限，以及建置與測試指令；再讀 `docs/tech/architecture.md`、`docs/tech/tasks.md`。
+3. 讀 CLAUDE.md「模型政策」節取得實作模型、小模型、審核模型與審核退回上限，以及建置與測試指令；再讀 `docs/tech/architecture.md`、`docs/tech/tasks.md`。
 4. 若 `docs/build/log.md` 不存在，建立並寫入 `# Build Log`。
 5. 取專案絕對路徑：`pwd -W`（Git Bash 會印出 Windows 原生路徑；非 Windows 用 `pwd`）。
 
@@ -19,7 +19,13 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
 依 tasks.md 順序，跳過「狀態: done」與「狀態: blocked（手動）」的任務。對每個任務 T<n>：
 
 1. 在 tasks.md 把該任務「狀態: pending」改為「狀態: in_progress」。
-2. **實作**：用 Agent 工具派 subagent。model 依 CLAUDE.md「模型政策」節的實作模型（預設 `opus`）；任務標題或說明含「重構」「認證」「權限」「加密」「遷移」或以「[security]」開頭時改用審核模型（預設 `fable`）。Prompt：
+2. **實作**：用 Agent 工具派 subagent。model 依 CLAUDE.md「模型政策」節選：
+
+   - 任務標題或說明含「重構」「認證」「權限」「加密」「遷移」或以「[security]」開頭 → 審核模型（預設 `fable`）。這條優先。
+   - 否則，任務的「模組」只有一個且「驗收」條目 ≤ 3 → 小模型（預設 `sonnet`）。
+   - 其餘 → 實作模型（預設 `opus`）。
+
+   Prompt：
    ```
    你在專案 <絕對路徑> 工作。先讀 CLAUDE.md 與 docs/tech/architecture.md，然後只實作下列任務：
 
@@ -31,21 +37,23 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
    - 遵守 architecture.md 的模組邊界與資料庫連線規範。
    - 完成後回報：改了哪些檔案、跑了什麼測試指令、輸出摘要、任何未解決的問題。
    ```
-3. **審核**：派 model 為 CLAUDE.md 審核模型（預設 `fable`）的 subagent。Prompt：
+3. **機器閘門**：主 session 自己執行 CLAUDE.md 的測試指令（專案若有 typecheck / lint 也一起跑）。這是二元結果，不需要模型判斷，所以在派審核之前先做。
+   - **沒過**：**不派審核 subagent**，當作一次退回，照步驟 4 處理；步驟 4.b 的症狀寫失敗輸出摘要、根因與修法等修正回報後補上，步驟 4.d 的修正 prompt 改成貼失敗輸出而非審核全文。修正完回到本步驟重跑。
+   - **通過**：往下派審核 subagent。
+4. **審核**：派 model 為 CLAUDE.md 審核模型（預設 `fable`）的 subagent。**不要**把實作者的回報全文貼進 prompt——變更的事實在 `git diff`，貼回報只會把同一份內容再送一次，也容易讓審核者順著實作者的說法看。Prompt：
    ```
    你是審核者，專案在 <絕對路徑>。任務需求：
 
    <任務全文>
 
-   實作者回報：
+   實作者說改了這些檔案：<檔案清單，一行>
+   實作者跑的測試：<指令與通過 / 失敗一行摘要>
 
-   <回報全文>
-
-   請執行：`git status`、`git diff` 檢視全部變更；執行 CLAUDE.md 的測試指令；對照「驗收」逐條檢查；檢查是否違反 docs/tech/architecture.md 的模組邊界、資料庫連線規範，以及 docs/tech/security-review.md 的清單；檢查測試是否真的驗證行為而非只是通過。
+   請執行：`git status`、`git diff` 檢視全部變更；執行 CLAUDE.md 的測試指令；對照「驗收」逐條檢查；檢查實際變更的檔案與上面的清單是否一致（少報或多改都要指出）；檢查是否違反 docs/tech/architecture.md 的模組邊界、資料庫連線規範，以及 docs/tech/security-review.md 的清單；檢查測試是否真的驗證行為而非只是通過。
    回覆第一行必須是 `VERDICT: PASS` 或 `VERDICT: FAIL`。之後條列具體問題：檔案:行號、為什麼錯、該怎麼改。PASS 時也列出可接受的小建議。
    ```
-4. **若 FAIL**：先做 a 的次數檢查，通過才往下做 b～e。
-   a. **次數上限檢查（第一個一定要做的動作）**：N 為 CLAUDE.md「模型政策」節的審核退回上限（預設 3）。若這是該任務（issue）第 N 次 FAIL：記錄 issue（同 b）與 log（同 c）後執行 `node .pm/pm-state.mjs block build --reason "T<n> 審核 N 次未過"`（訊息裡的 N 換成實際數字，例如「T3 審核 3 次未過」），tasks.md 該任務改「狀態: blocked」，用 AskUserQuestion 詢問使用者（放寬驗收 / 拆任務 / 手動處理），停止，不再往下（不得再派修正 subagent）。也就是同一任務最多派 N 次實作（1 次初版 + N−1 次修正），絕不派第 N+1 次。
+5. **若 FAIL**：先做 a 的次數檢查，通過才往下做 b～e。
+   a. **次數上限檢查（第一個一定要做的動作）**：N 為 CLAUDE.md「模型政策」節的審核退回上限（預設 3）。機器閘門（步驟 3）沒過與審核 FAIL 共用同一個計數器。若這是該任務（issue）第 N 次 FAIL：記錄 issue（同 b）與 log（同 c）後執行 `node .pm/pm-state.mjs block build --reason "T<n> 審核 N 次未過"`（訊息裡的 N 換成實際數字，例如「T3 審核 3 次未過」），tasks.md 該任務改「狀態: blocked」，用 AskUserQuestion 詢問使用者（放寬驗收 / 拆任務 / 手動處理），停止，不再往下（不得再派修正 subagent）。也就是同一任務最多派 N 次實作（1 次初版 + N−1 次修正），絕不派第 N+1 次。
       停止之前，先依使用者的選擇改 tasks.md：
       - **放寬驗收**：依使用者寫的內容改寫該任務的「驗收」條目，並把「狀態」改回 `pending`。
       - **拆任務**：依使用者的拆法把該任務換成 `T<n>a`、`T<n>b`… 等項目，各自寫清楚說明 / 驗收 / 測試 / 依賴，「狀態」都設為 `pending`。
@@ -61,7 +69,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
       ```
    d. 派實作 subagent（同 model）修正，prompt 為步驟 2 的內容再加上「審核者指出以下問題，請逐項修正並回報：<審核全文>」。
    e. 回到步驟 3。
-5. **若 PASS**：
+6. **若 PASS**：
    a. tasks.md 該任務改「狀態: done」。
    b. 先寫紀錄再 commit：`docs/build/log.md` 追加 `## T<n> 完成` 與一行審核摘要（此時還沒有 sha，對應的 commit 由步驟 d 的 issue 紀錄；沒有退回紀錄的任務就只留這一行）。
    c. Commit，前綴規則：新功能 `feat:`、修錯 `fix:`、只有測試 `test:`、[security] 任務 `fix(security):`。因為 log.md 與 tasks.md 已在 b、a 更新，這個 commit 即包含該任務的全部變更，自成一體。
@@ -78,7 +86,7 @@ description: 階段 4 產品實現。依 docs/tech/tasks.md 逐任務派 subagen
       git rev-parse --short HEAD
       ```
    d. 此任務**每一個**退回紀錄的 issue 都要補上 commit（不是只補最後一個）：對每個 id 各跑一次 `node .pm/pm-state.mjs update-issue <id> --commit <sha>`。
-6. 進入下一個任務。
+7. 進入下一個任務。
 
 ## 收尾
 1. 全部任務 done 後執行 CLAUDE.md 的完整測試指令，貼出結果摘要。

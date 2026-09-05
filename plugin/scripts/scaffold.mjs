@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 把 pm-workflow 種入一個專案資料夾。
-// 用法：node scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=] [--pinned-file=]
+// 用法：node scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=] [--small-model=] [--pinned-file=]
 import {
   cpSync, existsSync, mkdirSync, readFileSync, writeFileSync,
 } from 'node:fs';
@@ -21,14 +21,15 @@ export function validateName(name) {
 }
 
 export const MODEL_NAME_RE = /^[a-z0-9.-]{1,32}$/;
-export const DEFAULT_VARS = { implModel: 'opus', reviewModel: 'fable', maxRetries: 3, pinned: '（無）' };
+export const DEFAULT_VARS = { implModel: 'opus', reviewModel: 'fable', smallModel: 'sonnet', maxRetries: 3, pinned: '（無）' };
+const MODEL_KEYS = { 'impl-model': 'implModel', 'review-model': 'reviewModel', 'small-model': 'smallModel' };
 
-/** 從 argv 取出 --impl-model= --review-model= --max-retries= --pinned-file=，其餘原樣回傳。 */
+/** 從 argv 取出 --impl-model= --review-model= --small-model= --max-retries= --pinned-file=，其餘原樣回傳。 */
 export function parseVars(args) {
   const vars = {};
   const rest = [];
   for (const a of args) {
-    const m = /^--(impl-model|review-model|max-retries|pinned-file)=(.*)$/.exec(a);
+    const m = /^--(impl-model|review-model|small-model|max-retries|pinned-file)=(.*)$/.exec(a);
     if (!m) { rest.push(a); continue; }
     const [, key, value] = m;
     if (key === 'pinned-file') {
@@ -39,7 +40,7 @@ export function parseVars(args) {
       vars.maxRetries = n;
     } else {
       if (!MODEL_NAME_RE.test(value)) throw new Error(`invalid --${key}: "${value}"（小寫英數 . -，最長 32）`);
-      vars[key === 'impl-model' ? 'implModel' : 'reviewModel'] = value;
+      vars[MODEL_KEYS[key]] = value;
     }
   }
   return { vars, rest };
@@ -112,7 +113,7 @@ if (isMain) {
     const { vars, rest } = parseVars(process.argv.slice(2));
     const useGit = !rest.includes('--no-git');
     const positional = rest.filter((a) => !a.startsWith('--'));
-    if (!positional[0]) throw new Error('usage: scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=] [--pinned-file=]');
+    if (!positional[0]) throw new Error('usage: scaffold.mjs <targetDir> [name] [--no-git] [--impl-model=] [--review-model=] [--max-retries=] [--small-model=] [--pinned-file=]');
     const targetDir = resolve(positional[0]);
     const result = scaffoldProject({ targetDir, name: positional[1] ?? basename(targetDir), git: useGit, vars });
     process.stdout.write(JSON.stringify(result) + '\n');

@@ -70,6 +70,34 @@ describe('skill files', () => {
     }
   });
 
+  it('review prompts read the diff instead of re-sending the implementer report', () => {
+    for (const name of ['stage-build', 'stage-verify']) {
+      const md = read(name);
+      // 貼「回報全文」等於同一份變更付兩次錢；審核者本來就會跑 git diff
+      expect(md, name).not.toContain('<回報全文>');
+      expect(md, name).toContain('git diff');
+      expect(md, name).toContain('改了這些檔案');
+    }
+  });
+
+  it('both skills gate on machine-checkable failures before spending a review subagent', () => {
+    for (const name of ['stage-build', 'stage-verify']) {
+      const md = read(name);
+      expect(md, name).toContain('機器閘門');
+      expect(md, name).toContain('不派審核 subagent');
+      // 閘門不可自成一個計數器，否則退回次數失去上限
+      expect(md, name).toContain('共用同一個計數器');
+    }
+  });
+
+  it('stage-build can downgrade small tasks to the small model', () => {
+    const md = read('stage-build');
+    expect(md).toContain('小模型');
+    expect(md).toContain('（預設 `sonnet`）');
+    // 升級規則必須優先，否則含資安關鍵字的單模組任務會被降級
+    expect(md).toMatch(/這條優先/);
+  });
+
   it('pm-status documents every CLI command', () => {
     const md = read('pm-status');
     for (const cmd of ['init', 'get', 'set-type', 'start', 'done', 'block', 'add-doc', 'add-issue', 'update-issue', 'history', 'rebuild']) {

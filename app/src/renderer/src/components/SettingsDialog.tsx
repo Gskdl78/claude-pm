@@ -16,7 +16,7 @@ interface Props {
 }
 
 interface Form {
-  root: string; implModel: ModelName; reviewModel: ModelName;
+  root: string; implModel: ModelName; reviewModel: ModelName; smallModel: ModelName;
   maxRetries: string; termFontSize: string; logHeight: string; notifyOnIdle: boolean;
 }
 
@@ -24,7 +24,7 @@ const MODEL_LABELS: Record<ModelName, string> = { opus: 'Opus', fable: 'Fable', 
 
 function fromConfig(c: AppConfig): Form {
   return {
-    root: c.root, implModel: c.implModel, reviewModel: c.reviewModel,
+    root: c.root, implModel: c.implModel, reviewModel: c.reviewModel, smallModel: c.smallModel,
     maxRetries: String(c.maxRetries), termFontSize: String(c.termFontSize), logHeight: String(c.logHeight),
     notifyOnIdle: c.notifyOnIdle,
   };
@@ -67,7 +67,7 @@ export function SettingsDialog({ open, config, busy, error, onPickFolder, onSave
     onSave({
       root: form.root.trim(),
       patch: {
-        implModel: form.implModel, reviewModel: form.reviewModel,
+        implModel: form.implModel, reviewModel: form.reviewModel, smallModel: form.smallModel,
         maxRetries: Number(form.maxRetries), termFontSize: Number(form.termFontSize), logHeight: Number(form.logHeight),
         notifyOnIdle: form.notifyOnIdle,
       },
@@ -76,7 +76,7 @@ export function SettingsDialog({ open, config, busy, error, onPickFolder, onSave
   const pick = async () => { const r = await onPickFolder(); if (r) set('root', r); };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Escape' && !busy) onCancel(); };
 
-  const modelSelect = (id: string, label: string, k: 'implModel' | 'reviewModel') => (
+  const modelSelect = (id: string, label: string, k: 'implModel' | 'reviewModel' | 'smallModel') => (
     <div className="field">
       <label htmlFor={id}>{label}</label>
       <select id={id} value={form[k]} disabled={busy} onChange={(e) => set(k, e.target.value as ModelName)}>
@@ -106,9 +106,10 @@ export function SettingsDialog({ open, config, busy, error, onPickFolder, onSave
           <div className="muted">改變根目錄會關閉目前專案並重新載入清單。</div>
         </div>
         {modelSelect('settings-impl', '預設實作模型', 'implModel')}
+        {modelSelect('settings-small', '小任務模型', 'smallModel')}
         {modelSelect('settings-review', '審核模型', 'reviewModel')}
         {numInput('settings-retries', '審核退回上限', 'maxRetries')}
-        <div className="muted">模型與退回上限只影響之後建立或初始化的專案（寫進其 CLAUDE.md）。</div>
+        <div className="muted">小任務模型用在只對應一個模組、驗收 3 條以內的任務；含重構 / 認證 / 權限 / 加密 / 遷移的任務一律用審核模型。模型與退回上限只影響之後建立或初始化的專案（寫進其 CLAUDE.md）。</div>
         {numInput('settings-font', '終端機字型大小', 'termFontSize')}
         {numInput('settings-log', '資訊框預設高度', 'logHeight')}
         <label className="check">

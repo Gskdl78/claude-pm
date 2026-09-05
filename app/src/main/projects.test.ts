@@ -88,12 +88,13 @@ describe('createProject / initExisting / rebuildState', () => {
 
   it('passes model vars to scaffold so CLAUDE.md reflects them', async () => {
     const root = tmp();
-    await createProject(root, 'policy', PLUGIN_DIR, { implModel: 'sonnet', reviewModel: 'opus', maxRetries: 5 });
+    await createProject(root, 'policy', PLUGIN_DIR, { implModel: 'sonnet', reviewModel: 'opus', smallModel: 'fable', maxRetries: 5 });
     const claude = readFileSync(join(root, 'policy', 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('實作 subagent：`sonnet`');
+    expect(claude).toContain('小任務降級用 `fable`');
     expect(claude).toContain('審核退回上限 5 次');
-    expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2 })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2']);
-    expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', maxRetries: 2, pinnedFile: 'C:\\p.md' })).toEqual(['--impl-model=a', '--review-model=b', '--max-retries=2', '--pinned-file=C:\\p.md']);
+    expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', smallModel: 'c', maxRetries: 2 })).toEqual(['--impl-model=a', '--review-model=b', '--small-model=c', '--max-retries=2']);
+    expect(scaffoldArgs({ implModel: 'a', reviewModel: 'b', smallModel: 'c', maxRetries: 2, pinnedFile: 'C:\\p.md' })).toEqual(['--impl-model=a', '--review-model=b', '--small-model=c', '--max-retries=2', '--pinned-file=C:\\p.md']);
     expect(scaffoldArgs()).toEqual([]);
   });
 });
