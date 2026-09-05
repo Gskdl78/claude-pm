@@ -216,6 +216,7 @@ export interface PmApi {
   gh: GhApi;
   docs: DocsApi;
   insights: InsightsApi;
+  skills: SkillsApi;
   /** 只開 http(s) / mailto；其他一律拒絕 */
   openExternal(url: string): Promise<void>;
   /** docs/**\/*.md 有新增、刪除或修改（每 2 秒比對一次） */
@@ -236,6 +237,48 @@ export interface PmApi {
   };
   onStateChanged(cb: (p: ProjectInfo) => void): () => void;
   onGitChanged(cb: (commits: GitCommit[]) => void): () => void;
+}
+
+/** 從 App 貼進來的 skill 來源；repo 走 git clone，local 直接掃該資料夾。 */
+export type SkillSource =
+  | { kind: 'repo'; url: string; ref: string | null; subpath: string | null }
+  | { kind: 'local'; path: string };
+
+export interface SkillFileInfo { rel: string; bytes: number; lines: number }
+/** 掃描時命中的樣式；只是提示，不代表有問題。 */
+export interface SkillFinding { pattern: string; file: string; line: number }
+export type SkillScope = 'project' | 'global';
+export interface SkillCollision { scope: SkillScope | 'plugin'; where: string }
+
+export interface SkillReport {
+  name: string;
+  dirName: string;
+  nameMatchesDir: boolean;
+  description: string;
+  frontmatter: Record<string, string>;
+  /** 相對掃描根目錄的資料夾路徑；'' 表示根目錄本身 */
+  rel: string;
+  files: SkillFileInfo[];
+  totalBytes: number;
+  executables: string[];
+  findings: SkillFinding[];
+  hosts: string[];
+  collisions: SkillCollision[];
+  skillMd: string;
+}
+
+export type SkillStatus = 'none' | 'trial' | 'adopted' | 'global';
+export interface SkillInstall { name: string; status: SkillStatus; needsRestart: boolean }
+export interface SkillFetchResult { cacheId: string; reports: SkillReport[] }
+export interface SkillActionResult { installs: SkillInstall[]; result: GitResult | null }
+
+export interface SkillsApi {
+  fetch(source: string, projectPath: string | null): Promise<SkillFetchResult>;
+  list(path: string): Promise<SkillInstall[]>;
+  install(cacheId: string, name: string, path: string, renameTo: string | null): Promise<SkillInstall[]>;
+  remove(path: string, name: string, scope: SkillScope): Promise<SkillInstall[]>;
+  adopt(path: string, name: string): Promise<SkillActionResult>;
+  promote(path: string, name: string): Promise<SkillActionResult>;
 }
 
 declare global {

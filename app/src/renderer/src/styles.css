@@ -343,3 +343,18 @@ section.center { grid-area: term; display: flex; flex-direction: column; align-i
 .pinned-notes h3 { margin: 0; font-size: 14px; }
 .pinned-note { display: flex; align-items: center; gap: 8px; }
 .pinned-note span { flex: 1; }
+
+/* Skills 分頁 */
+.skill-report { padding: 12px 16px; overflow-y: auto; }
+.skill-report h4 { margin: 14px 0 4px; font-size: 13px; }
+.skill-files, .skill-findings { margin: 0; padding-left: 18px; }
+.skill-caveat { margin-top: 14px; padding: 8px 10px; border-left: 3px solid #b58900; background: #2b2b1e; }
+.skill-list { padding: 12px 16px; overflow-y: auto; }
+.skill-list h4 { margin: 14px 0 4px; font-size: 13px; }
+.skill-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #333; }
+.skill-row .name { flex: 1; }
+.skill-badge { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #333; }
+.skill-badge.trial { background: #4a3f1e; }
+.skill-badge.adopted { background: #1e3a4a; }
+.skill-badge.global { background: #1e4a2f; }
+.warn { color: #d7a13b; }

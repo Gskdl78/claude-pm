@@ -102,6 +102,14 @@ function mockApi(overrides: Partial<PmApi> = {}, listeners: Listeners = { state:
       pin: vi.fn(async () => []),
       unpin: vi.fn(async () => []),
     },
+    skills: {
+      fetch: vi.fn(async () => ({ cacheId: 'a'.repeat(16), reports: [] })),
+      list: vi.fn(async () => []),
+      install: vi.fn(async () => []),
+      remove: vi.fn(async () => []),
+      adopt: vi.fn(async () => ({ installs: [], result: null })),
+      promote: vi.fn(async () => ({ installs: [], result: null })),
+    },
     openExternal: vi.fn(async () => {}),
     onDocsChanged: vi.fn((cb) => { listeners.docs.push(cb); return () => {}; }),
     pty: {
@@ -555,7 +563,7 @@ describe('App', () => {
   it('sidebar 洞察 opens the insights tab without a project', async () => {
     const api = mockApi();
     await renderApp(api);
-    fireEvent.click(await screen.findByRole('button', { name: '📊 洞察' }));
+    fireEvent.click(await screen.findByRole('button', { name: '洞察' }));
     expect(screen.getByRole('tab', { name: '洞察' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('insights')).not.toHaveAttribute('hidden');
   });
@@ -571,7 +579,7 @@ describe('App', () => {
     await renderApp(api);
     fireEvent.click(await screen.findByText('alpha'));
     await screen.findByRole('button', { name: /產品設計/ });
-    fireEvent.click(screen.getByRole('button', { name: '📊 洞察' }));
+    fireEvent.click(screen.getByRole('button', { name: '洞察' }));
     fireEvent.click(screen.getByRole('button', { name: 'reveal' }));
     await waitFor(() => expect(api.openProject).toHaveBeenLastCalledWith('C:\\P\\beta'));
     await waitFor(() => expect(screen.getByText('abc1234', { selector: '.reveal' })).toBeInTheDocument());

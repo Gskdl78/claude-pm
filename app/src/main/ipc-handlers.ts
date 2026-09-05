@@ -8,6 +8,7 @@ import { listProjects, readProjectInfo, createProject, cloneProject, assertClone
 import { getLog } from './git';
 import { createGitHandlers, type GitHandlers } from './git-handlers';
 import { createDocsHandlers, type DocsHandlers } from './docs-handlers';
+import { createSkillHandlers, type SkillHandlers } from './skill-handlers';
 import { SessionManager, buildClaudeArgs, findClaude } from './pty';
 import { ProjectWatcher } from './watcher';
 import { BLOCKED_OPEN_EXT_RE, isExternalUrl } from './url-policy';
@@ -39,7 +40,7 @@ export interface HandlerDeps {
   pinnedFile?: string;
 }
 
-export interface Handlers extends GitHandlers, DocsHandlers {
+export interface Handlers extends GitHandlers, DocsHandlers, SkillHandlers {
   'config:get': () => Promise<AppConfig>;
   'config:setRoot': (root: string) => Promise<AppConfig>;
   'config:update': (patch: ConfigPatch) => Promise<AppConfig>;
@@ -176,6 +177,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     ...createGitHandlers(guard),
 
     ...createDocsHandlers(guard),
+    ...createSkillHandlers(guard),
 
     'shell:openPath': async (path) => {
       const p = guard(path);

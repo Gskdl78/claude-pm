@@ -141,7 +141,7 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 
 ## 洞察（跨專案 issue）
 
-- 側欄底部「📊 洞察」或中間分頁「洞察」：列出根目錄下所有專案的 issue，依根因分組（規則與 `/stage-env` 寫入注意事項時相同），顯示次數、來源專案與修法；可依階段（產品實現 / 人工驗證）與時間（7 / 30 天）篩選。
+- 側欄底部「洞察」或中間分頁「洞察」：列出根目錄下所有專案的 issue，依根因分組（規則與 `/stage-env` 寫入注意事項時相同），顯示次數、來源專案與修法；可依階段（產品實現 / 人工驗證）與時間（7 / 30 天）篩選。
 - 展開群組可看到每筆 issue；「查看 commit」會切換到該專案並在右欄「歷史」分頁開啟該 commit。切換專案不會動到任何 session（見「多專案 session」），原本的對話都留著。
 - 「釘選為注意事項」把 `- <根因> → 建議：<修法>` 寫進 `%USERPROFILE%\.claude-pm\pinned-notes.md`；之後「+ 新專案」/「初始化」產生的 CLAUDE.md 會在「固定注意事項」節帶入（`/stage-env` 不會改動這一節）。在洞察頁可移除釘選。
 - state 損毀的專案會列在「略過」，不影響其他專案。
@@ -151,6 +151,74 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 1. 兩個專案各有至少一筆 issue（可用 `node .pm/pm-state.mjs add-issue …` 製造）→ 洞察頁分組與次數正確；切換篩選計數跟著變。
 2. 展開群組按「查看 commit」：左欄切到該專案，右欄歷史分頁顯示該 commit 內容。
 3. 釘選一個根因 → `pinned-notes.md` 出現該行 → 新建專案的 CLAUDE.md「固定注意事項」含該行；在洞察頁移除後檔案清空。
+
+## Skill 試用
+
+側欄底部的「Skills」開一個全頁，用來把別人寫的 Claude Code skill 抓下來、看懂、在目前專案試用，滿意再留下、好用再升為全域。skill 會裝進**目前開著的專案**，所以要先在左欄開一個專案。
+
+### 來源
+
+「加入 skill」的對話框吃四種輸入：
+
+| 輸入 | 行為 |
+| --- | --- |
+| `https://github.com/使用者/倉庫`（或 `.git` 結尾） | `git clone --depth 1` 到快取，掃整個倉庫 |
+| `https://github.com/使用者/倉庫/tree/<分支或 hash>/<路徑>` | 用該分支 clone 後只取 `<路徑>` 那個資料夾 |
+| `git@主機:使用者/倉庫.git` | 同第一種 |
+| 本機資料夾的絕對路徑 | 不 clone，直接掃 |
+
+快取在 `%USERPROFILE%\.claude-pm\skill-cache\`，同一個來源重新取得會先刪掉舊的再 clone，不會混到上一次的殘留。掃描只往下找兩層資料夾（涵蓋 `skills/<名稱>/SKILL.md` 這種常見形狀）；找到一個 `SKILL.md` 就直接進報告頁，找到多個會先列清單讓你挑。
+
+上限：200 個檔案、總共 2 MB、單檔 512 KB。任一項超過就整包拒絕，不做部分匯入。
+
+### 掃描報告
+
+主程序做的靜態掃描，不花 token：
+
+- frontmatter 的 `name`、`description` 等欄位；`name` 與資料夾名不一致會標出來（Claude Code 認的是 `name`）
+- 檔案清單、各檔位元組與行數
+- 可執行檔（`.sh` `.bash` `.ps1` `.bat` `.cmd` `.mjs` `.js` `.py`）
+- 值得看一眼的樣式與所在行號：`curl` `wget` `Invoke-WebRequest` `rm -rf` `Remove-Item -Recurse` `base64` `eval` `chmod +x` `git push` `npm install` `pip install`
+- 文字裡出現的連外網域
+- 與 `~/.claude/skills/`、目前專案 `.claude/skills/`、`~/.claude/plugins/cache/` 的重名
+
+報告頁固定顯示一行提醒：**靜態掃描是風險提示，不是安全保證；skill 附帶的 script 一旦被執行就是任意程式碼。** App **不會**為了試跑而執行 skill 裡的任何 script。
+
+「請 Claude Code 分析」把掃描摘要加上 `SKILL.md` 全文寫進目前專案的終端機，由 Claude Code 用白話說明它做什麼、何時觸發、有沒有該擔心的地方，你可以直接在終端機追問。`SKILL.md` 超過 64 KB 只送開頭並註明已截斷；終端機正在輸出時按鈕停用（與階段按鈕同一個閒置判斷）。
+
+### 三段階梯
+
+狀態不另外存檔，每次都從檔案系統推導：
+
+| 狀態 | 判斷 | 可做的動作 |
+| --- | --- | --- |
+| 試用中 | 在專案 `.claude/skills/<名稱>/` 且 `.git/info/exclude` 有對應行 | 採用 / 升為全域 / 移除 |
+| 專案採用 | 在專案 `.claude/skills/<名稱>/` 且沒有 exclude 行 | 升為全域 / 移除 |
+| 全域 | 在 `~/.claude/skills/<名稱>/` | 移除 |
+
+- **試用**：整個資料夾複製到 `<專案>/.claude/skills/<名稱>/`（`<名稱>` 取 frontmatter 的 `name`），同時往 `.git/info/exclude` 加一行 `/.claude/skills/<名稱>/`。這是本機專屬的忽略清單，不動 repo 的 `.gitignore`，所以 git 面板不會跟著髒；不滿意直接移除，repo 從頭到尾沒看過它。專案還不是 git 專案時就沒有這一步。
+- **採用**：拿掉 exclude 那行，`git add` 後 commit `chore(skills): 採用 <名稱>`。
+- **升為全域**：複製到 `~/.claude/skills/<名稱>/`，再刪掉專案那份（已 commit 過的會用 `git rm -r` 並 commit `chore(skills): <名稱> 改為全域`）。一個 skill 全機器只留一份，不會出現專案一份、全域一份各自漂移。
+- 同名時**擋下**，不覆蓋：Claude Code 遇到同名會讓專案那份蓋掉全域那份，靜默覆蓋比擋下來難察覺。
+
+複製時 symlink 一律拒絕（clone 下來的連結可能指到來源外面），`.git` 與 `node_modules` 不複製。clone 與所有 git 都在主程序以 `execFile('git', argv)` 執行，網址先過白名單正則，skill 名稱過 `NAME_RE`，組出來的路徑都經 `assertInsideRoot` 確認仍在預期根目錄內。
+
+### 安裝後要重啟 session
+
+Claude Code 在 session 啟動時才載入 skills，所以安裝或移除之後，**要關掉並重開那個專案的 session 才會生效**（側欄該專案的 `×` 關閉，再點專案重開）。輸出區在每次安裝 / 移除後都會提醒一次。
+
+### 手動驗收清單
+
+1. 開一個專案 →「Skills」→「加入 skill」→ 貼一個含 `SKILL.md` 的本機資料夾絕對路徑：直接進報告頁，顯示檔案清單與那行安全提醒。
+2. 貼一個一個倉庫裡有多個 skill 的 GitHub 網址：先出現清單，按「查看」才進報告頁。
+3. 貼 `javascript:alert(1)` 或 `http://`（非 https）：對話框顯示「取得失敗」，右欄輸出區顯示「看不懂這個來源…」，不建立任何資料夾。
+4. 按「試用」後看右欄 git 面板的「變更」：應該是空的（被 exclude 藏起來）；`.claude/skills/<名稱>/` 確實存在。
+5. 關掉該專案 session 再重開，在終端機問 Claude Code 有沒有這個 skill：讀得到。
+6. 按「採用」：git 歷史多一筆 `chore(skills): 採用 <名稱>`，該 skill 的狀態變成「專案採用」。
+7. 按「升為全域」：`~/.claude/skills/<名稱>/` 出現，專案那份消失，git 面板乾淨（刪除已 commit）。
+8. 對全域的 skill 按「移除」：`~/.claude/skills/<名稱>/` 消失。
+9. 已經有同名 skill 時再試用一次：擋下並顯示「同名的 skill 已經存在」。
+10. 沒有開專案時進 Skills 頁：「加入 skill」是灰的，並提示先開一個專案。
 
 ## 多專案 session
 
