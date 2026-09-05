@@ -94,4 +94,4 @@ cd app && npm run test:e2e   # Playwright 開真的 Electron 視窗
 
 ## 授權
 
-尚未決定授權條款。在加上 LICENSE 之前，預設保留所有權利。
+MIT
