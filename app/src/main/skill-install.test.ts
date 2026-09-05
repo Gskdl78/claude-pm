@@ -118,6 +118,36 @@ describe('adopt / promote / remove', () => {
   });
 });
 
+describe('listInstalled descriptions', () => {
+  it('takes the description from each SKILL.md frontmatter', () => {
+    const home = tmp();
+    const p = project();
+    installTrial(source(), p, 'foo');
+    expect(listInstalled(p, home).find((s) => s.name === 'foo')?.description).toBe('d');
+  });
+
+  it('falls back to an empty string when SKILL.md is missing or has no description', () => {
+    const home = tmp();
+    const p = project();
+    // 沒有 SKILL.md 的資料夾，以及有 SKILL.md 但沒寫 description 的
+    mkdirSync(join(projectSkillsDir(p), 'empty'), { recursive: true });
+    mkdirSync(join(projectSkillsDir(p), 'nodesc'), { recursive: true });
+    writeFileSync(join(projectSkillsDir(p), 'nodesc', 'SKILL.md'), '---\nname: nodesc\n---\n');
+    const list = listInstalled(p, home);
+    expect(list.find((s) => s.name === 'empty')?.description).toBe('');
+    expect(list.find((s) => s.name === 'nodesc')?.description).toBe('');
+  });
+
+  it('prefers the project copy when a name exists in both places', () => {
+    const home = tmp();
+    const p = project();
+    mkdirSync(join(globalSkillsDir(home), 'foo'), { recursive: true });
+    writeFileSync(join(globalSkillsDir(home), 'foo', 'SKILL.md'), '---\nname: foo\ndescription: 全域那份\n---\n');
+    installTrial(source(), p, 'foo');
+    expect(listInstalled(p, home).find((s) => s.name === 'foo')?.description).toBe('d');
+  });
+});
+
 describe('findCollisions', () => {
   it('reports the project and global copies separately', () => {
     const home = tmp();

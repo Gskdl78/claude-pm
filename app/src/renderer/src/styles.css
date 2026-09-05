@@ -357,4 +357,7 @@ section.center { grid-area: term; display: flex; flex-direction: column; align-i
 .skill-badge.trial { background: #4a3f1e; }
 .skill-badge.adopted { background: #1e3a4a; }
 .skill-badge.global { background: #1e4a2f; }
+.skill-row .name.link { text-align: left; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; font: inherit; }
+.skill-row .name.link:hover { text-decoration: underline; }
+.skill-desc { margin: 0 0 8px; padding: 6px 10px; border-left: 2px solid #444; color: #bbb; }
 .warn { color: #d7a13b; }

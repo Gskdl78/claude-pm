@@ -4,7 +4,8 @@ import type { ComponentProps } from 'react';
 import type { SkillFetchResult, SkillInstall } from '../../../../shared/types';
 import { SkillsView } from './SkillsView';
 
-const install = (name: string, status: SkillInstall['status']): SkillInstall => ({ name, status, needsRestart: false });
+const install = (name: string, status: SkillInstall['status'], description = `${name} 在做某件事`): SkillInstall =>
+  ({ name, status, needsRestart: false, description });
 
 const fetchResult: SkillFetchResult = {
   cacheId: 'a'.repeat(16),
@@ -55,6 +56,30 @@ describe('SkillsView', () => {
     fireEvent.change(screen.getByLabelText('skill 來源'), { target: { value: 'https://github.com/u/r' } });
     fireEvent.click(screen.getByRole('button', { name: '取得' }));
     await waitFor(() => expect(screen.getByRole('button', { name: '試用' })).toBeInTheDocument());
+  });
+
+  it('shows the description when the name is clicked, and hides it again', () => {
+    view({ installs: [install('t', 'trial', '把輸入變成知識圖譜')] });
+    expect(screen.queryByText('把輸入變成知識圖譜')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 't' }));
+    expect(screen.getByText('把輸入變成知識圖譜')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 't' }));
+    expect(screen.queryByText('把輸入變成知識圖譜')).toBeNull();
+  });
+
+  it('opens only one description at a time', () => {
+    view({ installs: [install('a', 'global', 'AAA 說明'), install('b', 'global', 'BBB 說明')] });
+    fireEvent.click(screen.getByRole('button', { name: 'a' }));
+    expect(screen.getByText('AAA 說明')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'b' }));
+    expect(screen.queryByText('AAA 說明')).toBeNull();
+    expect(screen.getByText('BBB 說明')).toBeInTheDocument();
+  });
+
+  it('says so when a skill has no description', () => {
+    view({ installs: [install('t', 'trial', '')] });
+    fireEvent.click(screen.getByRole('button', { name: 't' }));
+    expect(screen.getByText(/沒有寫 description/)).toBeInTheDocument();
   });
 
   it('tells the user to open a project first', () => {

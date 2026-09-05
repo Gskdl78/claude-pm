@@ -268,7 +268,13 @@ export interface SkillReport {
 }
 
 export type SkillStatus = 'none' | 'trial' | 'adopted' | 'global';
-export interface SkillInstall { name: string; status: SkillStatus; needsRestart: boolean }
+export interface SkillInstall {
+  name: string;
+  status: SkillStatus;
+  needsRestart: boolean;
+  /** 取自該 skill 的 SKILL.md frontmatter；沒寫就是空字串 */
+  description: string;
+}
 export interface SkillFetchResult { cacheId: string; reports: SkillReport[] }
 export interface SkillActionResult { installs: SkillInstall[]; result: GitResult | null }
 

@@ -190,6 +190,8 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 
 狀態不另外存檔，每次都從檔案系統推導：
 
+清單裡點 skill 名稱會展開一行說明，內容取自它 `SKILL.md` frontmatter 的 `description`（讀檔而已，不花 token、不用等）。沒寫 `description` 的會直接說沒有。一次只展開一個。
+
 | 狀態 | 判斷 | 可做的動作 |
 | --- | --- | --- |
 | 試用中 | 在專案 `.claude/skills/<名稱>/` 且 `.git/info/exclude` 有對應行 | 採用 / 升為全域 / 移除 |

@@ -5,6 +5,7 @@ import type { GitResult, SkillCollision, SkillInstall, SkillScope } from '../sha
 import { deriveSkillStatus } from '../shared/skill-state';
 import { addExclude, hasExclude, removeExclude } from './skill-exclude';
 import { copySkillTree } from './skill-copy';
+import { parseFrontmatter } from './skill-scan';
 import { assertInsideRoot } from './paths';
 import { NAME_RE } from './projects';
 import { runGit } from './git-run';
@@ -57,16 +58,32 @@ export function findCollisions(name: string, projectPath: string | null, home: s
   return out;
 }
 
+/** SKILL.md frontmatter 的 description；讀不到或沒寫都回空字串（清單不該因為一個壞掉的 skill 就爆掉）。 */
+function readDescription(dir: string): string {
+  try {
+    return parseFrontmatter(readFileSync(join(dir, 'SKILL.md'), 'utf8'))?.description ?? '';
+  } catch {
+    return '';
+  }
+}
+
 /** 專案與全域兩邊的 skill 合起來的清單；needsRestart 由上層決定。 */
 export function listInstalled(projectPath: string, home: string = homedir()): SkillInstall[] {
   const inProject = new Set(subdirs(projectSkillsDir(projectPath)));
   const inGlobal = new Set(subdirs(globalSkillsDir(home)));
   const names = [...new Set([...inProject, ...inGlobal])].sort();
-  return names.map((name) => ({
-    name,
-    status: deriveSkillStatus(inProject.has(name), hasExclude(projectPath, name), inGlobal.has(name)),
-    needsRestart: false,
-  }));
+  return names.map((name) => {
+    // 同名時 Claude Code 吃專案那份，說明也要跟著取專案那份
+    const dir = inProject.has(name)
+      ? join(projectSkillsDir(projectPath), name)
+      : join(globalSkillsDir(home), name);
+    return {
+      name,
+      status: deriveSkillStatus(inProject.has(name), hasExclude(projectPath, name), inGlobal.has(name)),
+      needsRestart: false,
+      description: readDescription(dir),
+    };
+  });
 }
 
 /** SKILL.md 的 frontmatter name 換成新名字；沒有 name 那一行就原樣不動。 */

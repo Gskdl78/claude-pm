@@ -32,6 +32,8 @@ export function SkillsView({ hidden, projectPath, installs, busy, canAnalyze, on
   const [error, setError] = useState<string | null>(null);
   const [fetched, setFetched] = useState<{ result: SkillFetchResult; source: string } | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  /** 展開中的 skill 名稱；一次只開一個 */
+  const [opened, setOpened] = useState<string | null>(null);
 
   const clearFetched = () => { setFetched(null); setPicked(null); };
 
@@ -71,6 +73,7 @@ export function SkillsView({ hidden, projectPath, installs, busy, canAnalyze, on
       </div>
       {!projectPath && <p className="muted">先在左邊開一個專案，skill 會裝進那個專案。</p>}
       {projectPath && installs.length === 0 && <p className="muted">這個專案還沒有從外面加進來的 skill。</p>}
+      {installs.length > 0 && <p className="muted">點名稱看它在做什麼。</p>}
 
       {GROUPS.map(([status, label]) => {
         const rows = installs.filter((s) => s.status === status);
@@ -79,18 +82,26 @@ export function SkillsView({ hidden, projectPath, installs, busy, canAnalyze, on
           <div key={status}>
             <h4>{label}</h4>
             {rows.map((s) => (
-              <div className="skill-row" key={s.name}>
-                <span className="name">{s.name}</span>
-                <span className={`skill-badge ${s.status}`}>{label}</span>
-                {s.needsRestart && <span className="muted">待重啟</span>}
-                {s.status === 'trial' && (
-                  <button disabled={busy} aria-label={`採用 ${s.name}`} onClick={() => onAction(s.name, 'adopt')}>採用</button>
+              <div key={s.name}>
+                <div className="skill-row">
+                  <button className="name link" aria-expanded={opened === s.name}
+                    onClick={() => setOpened(opened === s.name ? null : s.name)}>{s.name}</button>
+                  <span className={`skill-badge ${s.status}`}>{label}</span>
+                  {s.needsRestart && <span className="muted">待重啟</span>}
+                  {s.status === 'trial' && (
+                    <button disabled={busy} aria-label={`採用 ${s.name}`} onClick={() => onAction(s.name, 'adopt')}>採用</button>
+                  )}
+                  {s.status !== 'global' && (
+                    <button disabled={busy} aria-label={`升為全域 ${s.name}`} onClick={() => onAction(s.name, 'promote')}>升為全域</button>
+                  )}
+                  <button className="danger" disabled={busy} aria-label={`移除 ${s.name}`}
+                    onClick={() => onAction(s.name, s.status === 'global' ? 'remove-global' : 'remove-project')}>移除</button>
+                </div>
+                {opened === s.name && (
+                  <p className="skill-desc">
+                    {s.description || '這個 skill 的 SKILL.md 沒有寫 description。'}
+                  </p>
                 )}
-                {s.status !== 'global' && (
-                  <button disabled={busy} aria-label={`升為全域 ${s.name}`} onClick={() => onAction(s.name, 'promote')}>升為全域</button>
-                )}
-                <button className="danger" disabled={busy} aria-label={`移除 ${s.name}`}
-                  onClick={() => onAction(s.name, s.status === 'global' ? 'remove-global' : 'remove-project')}>移除</button>
               </div>
             ))}
           </div>

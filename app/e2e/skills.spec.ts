@@ -70,6 +70,12 @@ test('takes a local skill through trial, adopt and promote to global', async () 
     expect(existsSync(join(dir, '.claude', 'skills', 'demo', 'SKILL.md'))).toBe(true);
     expect(git('status', '--porcelain')).not.toContain('demo');
 
+    // 點名稱看說明（讀 SKILL.md 的 frontmatter，不花 token）
+    await page.getByRole('button', { name: 'demo', exact: true }).click();
+    await expect(page.locator('.skill-desc')).toHaveText('e2e 用的示範 skill');
+    await page.getByRole('button', { name: 'demo', exact: true }).click();
+    await expect(page.locator('.skill-desc')).toHaveCount(0);
+
     // 採用：多一個 commit，exclude 行消失
     const before = Number(git('rev-list', '--count', 'HEAD').trim());
     await page.getByRole('button', { name: '採用 demo' }).click();
