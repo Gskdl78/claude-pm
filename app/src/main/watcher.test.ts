@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectWatcher } from './watcher';
@@ -71,6 +71,37 @@ describe('ProjectWatcher', () => {
       const p2 = once(w, 'git');
       writeFileSync(join(dir, '.git', 'refs', 'stash'), 'abc');
       await p2;
+    } finally {
+      w.stop();
+    }
+  });
+
+  // Windows 上「在目錄裡新增檔案」有很高機率完全不更新該目錄的 mtime，
+  // 所以 refs/heads、refs/tags 必須列內容而不是看目錄 mtime。這兩條會抓到退化。
+  it('emits git for a nested branch ref', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pm-watch-'));
+    mkdirSync(join(dir, '.git', 'refs', 'heads', 'feat'), { recursive: true });
+    const w = new ProjectWatcher(dir, 30);
+    w.start();
+    try {
+      const p = once(w, 'git');
+      writeFileSync(join(dir, '.git', 'refs', 'heads', 'feat', 'x'), 'abc');
+      await p;
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('emits git when a branch ref is deleted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pm-watch-'));
+    mkdirSync(join(dir, '.git', 'refs', 'heads'), { recursive: true });
+    writeFileSync(join(dir, '.git', 'refs', 'heads', 'dev'), 'abc');
+    const w = new ProjectWatcher(dir, 30);
+    w.start();
+    try {
+      const p = once(w, 'git');
+      rmSync(join(dir, '.git', 'refs', 'heads', 'dev'));
+      await p;
     } finally {
       w.stop();
     }

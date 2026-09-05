@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { docsSignature } from './docs';
 
@@ -14,6 +14,37 @@ function signature(file: string): string {
 
 function groupSignature(files: string[]): string {
   return files.map(signature).join('|');
+}
+
+/** refs 目錄底下最多列這麼多筆；正常 repo 遠不到，純粹避免異常目錄拖慢輪詢。 */
+const MAX_REF_ENTRIES = 2000;
+
+/**
+ * ref 目錄（refs/heads、refs/tags）的簽章：遞迴列出每個 ref 檔的路徑與 mtime/size。
+ *
+ * 不能用目錄本身的 mtime：實測在 Windows 上，於目錄內新增檔案有約 2/3 的機率
+ * 完全不會更新該目錄的 mtime（等一秒也不會），所以新分支 / 新標籤會被漏掉。
+ * 檔案自己的 mtime 是可靠的，列出名稱也能抓到新增與刪除。
+ */
+function refsSignature(dir: string): string {
+  const out: string[] = [];
+  const walk = (cur: string, prefix: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(cur, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (out.length >= MAX_REF_ENTRIES) return;
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) { walk(join(cur, e.name), rel); continue; }
+      out.push(`${rel}:${signature(join(cur, e.name))}`);
+    }
+  };
+  walk(dir, '');
+  if (out.length === 0) return '-';
+  return out.sort().join(',');
 }
 
 export type WatchEvent = 'state' | 'git' | 'docs';
@@ -38,7 +69,9 @@ export class ProjectWatcher extends EventEmitter {
   constructor(dir: string, private readonly intervalMs = 500, opts: { stateOnly?: boolean } = {}) {
     super();
     const g = (...p: string[]) => join(dir, '.git', ...p);
-    const gitFiles = [g('logs', 'HEAD'), g('HEAD'), g('index'), g('MERGE_HEAD'), g('refs', 'heads'), g('FETCH_HEAD'), g('packed-refs'), g('refs', 'tags'), g('refs', 'stash')];
+    const gitFiles = [g('logs', 'HEAD'), g('HEAD'), g('index'), g('MERGE_HEAD'), g('FETCH_HEAD'), g('packed-refs'), g('refs', 'stash')];
+    // refs/heads 與 refs/tags 是目錄，要用內容列表當簽章（見 refsSignature 的說明）
+    const refDirs = [g('refs', 'heads'), g('refs', 'tags')];
     const stateTarget: Target = { event: 'state', signature: () => groupSignature([join(dir, '.pm', 'state.json')]), every: 1, last: '' };
     if (opts.stateOnly) {
       this.targets = [stateTarget];
@@ -47,9 +80,14 @@ export class ProjectWatcher extends EventEmitter {
     this.targets = [
       stateTarget,
       // logs/HEAD：commit 與切換；HEAD：切換分支；index：stage / unstage；MERGE_HEAD：合併開始與結束；
-      // refs/heads（目錄 mtime）：新增 / 刪除分支；FETCH_HEAD：fetch / pull；packed-refs：gc 後的分支；
-      // refs/tags（目錄 mtime）：建立 / 刪除標籤；refs/stash：收藏的 push / pop / drop
-      { event: 'git', signature: () => groupSignature(gitFiles), every: 1, last: '' },
+      // FETCH_HEAD：fetch / pull；packed-refs：gc 後的分支；refs/stash：收藏的 push / pop / drop；
+      // refs/heads、refs/tags：新增 / 刪除 / 移動分支與標籤（列內容，不看目錄 mtime）
+      {
+        event: 'git',
+        signature: () => `${groupSignature(gitFiles)}|${refDirs.map(refsSignature).join('|')}`,
+        every: 1,
+        last: '',
+      },
       { event: 'docs', signature: () => docsSignature(dir), every: DOCS_EVERY, last: '' },
     ];
   }
