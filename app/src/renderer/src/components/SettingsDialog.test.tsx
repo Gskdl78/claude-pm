@@ -33,10 +33,11 @@ describe('SettingsDialog', () => {
     dialog({ onSave });
     fireEvent.change(screen.getByLabelText('專案根目錄'), { target: { value: 'D:\\W' } });
     fireEvent.change(screen.getByLabelText('預設實作模型'), { target: { value: 'sonnet' } });
+    fireEvent.change(screen.getByLabelText('小任務模型'), { target: { value: 'fable' } });
     fireEvent.change(screen.getByLabelText('審核退回上限'), { target: { value: '5' } });
     fireEvent.click(screen.getByLabelText('Claude Code 等待輸入時閃爍並通知'));
     fireEvent.click(screen.getByRole('button', { name: '儲存' }));
-    expect(onSave).toHaveBeenCalledWith({ root: 'D:\\W', patch: { implModel: 'sonnet', reviewModel: 'fable', maxRetries: 5, termFontSize: 14, logHeight: 160, notifyOnIdle: false } });
+    expect(onSave).toHaveBeenCalledWith({ root: 'D:\\W', patch: { implModel: 'sonnet', reviewModel: 'fable', smallModel: 'fable', maxRetries: 5, termFontSize: 14, logHeight: 160, notifyOnIdle: false } });
   });
 
   it('blocks saving on invalid values and shows messages', () => {

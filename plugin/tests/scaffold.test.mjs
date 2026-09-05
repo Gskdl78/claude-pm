@@ -130,11 +130,18 @@ describe('scaffoldProject', () => {
   it('renders the model policy from vars', () => {
     const root = makeTempDir();
     const target = join(root, 'vars');
-    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false, vars: { implModel: 'sonnet', reviewModel: 'opus', maxRetries: 5 } });
+    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false, vars: { implModel: 'sonnet', reviewModel: 'opus', smallModel: 'fable', maxRetries: 5 } });
     const claude = readFileSync(join(target, 'CLAUDE.md'), 'utf8');
     expect(claude).toContain('實作 subagent：`sonnet`');
     expect(claude).toContain('改用 `opus`');
+    expect(claude).toContain('小任務降級用 `fable`');
     expect(claude).toContain('審核退回上限 5 次；第 5 次仍不過');
+  });
+
+  it('defaults the small model to sonnet', () => {
+    const target = join(makeTempDir(), 'small-default');
+    scaffoldProject({ targetDir: target, pluginDir: PLUGIN_DIR, git: false });
+    expect(readFileSync(join(target, 'CLAUDE.md'), 'utf8')).toContain('小任務降級用 `sonnet`');
   });
 
   it('renders pinned notes from --pinned-file and （無） without it', () => {
@@ -181,8 +188,8 @@ describe('scaffoldProject', () => {
 
 describe('parseVars', () => {
   it('extracts model flags and leaves the rest', () => {
-    const { vars, rest } = parseVars(['C:\\x\\demo', '--impl-model=sonnet', 'demo', '--review-model=fable', '--max-retries=7', '--no-git']);
-    expect(vars).toEqual({ implModel: 'sonnet', reviewModel: 'fable', maxRetries: 7 });
+    const { vars, rest } = parseVars(['C:\\x\\demo', '--impl-model=sonnet', 'demo', '--review-model=fable', '--small-model=haiku', '--max-retries=7', '--no-git']);
+    expect(vars).toEqual({ implModel: 'sonnet', reviewModel: 'fable', smallModel: 'haiku', maxRetries: 7 });
     expect(rest).toEqual(['C:\\x\\demo', 'demo', '--no-git']);
     expect(parseVars(['--pinned-file=C:\\x\\p.md']).vars).toEqual({ pinnedFile: 'C:\\x\\p.md' });
     expect(parseVars(['--pinned-file=']).vars).toEqual({});
@@ -191,6 +198,7 @@ describe('parseVars', () => {
     expect(() => parseVars(['--max-retries=0'])).toThrow(/max-retries/);
     expect(() => parseVars(['--max-retries=abc'])).toThrow(/max-retries/);
     expect(() => parseVars(['--impl-model=GPT 5'])).toThrow(/impl-model/);
+    expect(() => parseVars(['--small-model=GPT 5'])).toThrow(/small-model/);
     expect(MODEL_NAME_RE.test('claude-fable-5.1')).toBe(true);
   });
 });

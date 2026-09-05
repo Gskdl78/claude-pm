@@ -12,9 +12,11 @@
 - 使用者若直接要求寫功能程式碼而 build 階段尚未開始，先提醒目前階段並建議跑對應 skill。
 
 ## 模型政策
-- 實作 subagent：`{{implModel}}`。任務說明含「重構」「認證」「權限」「加密」「遷移」時改用 `{{reviewModel}}`。
-- 審核 subagent：一律 `{{reviewModel}}`。
+- 實作 subagent：`{{implModel}}`。任務標題或說明含「重構」「認證」「權限」「加密」「遷移」，或標題以 `[security]` 開頭時改用 `{{reviewModel}}`。
+- 小任務降級用 `{{smallModel}}`：任務的「模組」只有一個、「驗收」條目 ≤ 3，且不符合上一條的升級條件——三項全中才降級，升級規則優先。
+- 審核 subagent：一律 `{{reviewModel}}`，不降級。
 - 審核退回上限 {{maxRetries}} 次；第 {{maxRetries}} 次仍不過標記 blocked 並詢問使用者。
+- 測試 / typecheck / lint 沒過時由主 session 直接退回實作 subagent，不派審核 subagent；這種退回與審核退回共用同一個計數器，一樣受上限拘束。
 
 ## Git 規則
 - 每階段結束必 commit；build 階段每個任務一 commit；修錯必 commit。

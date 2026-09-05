@@ -12,6 +12,7 @@ export const LIMITS = {
 export interface Settings {
   implModel: ModelName;
   reviewModel: ModelName;
+  smallModel: ModelName;
   maxRetries: number;
   termFontSize: number;
   logHeight: number;
@@ -19,7 +20,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  implModel: 'opus', reviewModel: 'fable',
+  implModel: 'opus', reviewModel: 'fable', smallModel: 'sonnet',
   maxRetries: LIMITS.maxRetries.default, termFontSize: LIMITS.termFontSize.default, logHeight: LIMITS.logHeight.default,
   notifyOnIdle: true,
 };
@@ -43,6 +44,7 @@ export function normalizeConfig(raw: unknown, base: AppConfig): AppConfig {
     recent: Array.isArray(r.recent) ? r.recent.filter((x): x is string => typeof x === 'string') : [],
     implModel: isModel(r.implModel) ? r.implModel : base.implModel,
     reviewModel: isModel(r.reviewModel) ? r.reviewModel : base.reviewModel,
+    smallModel: isModel(r.smallModel) ? r.smallModel : base.smallModel,
     maxRetries: inRange(r.maxRetries, 'maxRetries') ? r.maxRetries : base.maxRetries,
     termFontSize: inRange(r.termFontSize, 'termFontSize') ? r.termFontSize : base.termFontSize,
     logHeight: inRange(r.logHeight, 'logHeight') ? r.logHeight : base.logHeight,
@@ -57,6 +59,7 @@ export function validatePatch(v: unknown): ConfigPatch {
   const out: ConfigPatch = {};
   if ('implModel' in p) { if (!isModel(p.implModel)) throw new Error('invalid implModel'); out.implModel = p.implModel; }
   if ('reviewModel' in p) { if (!isModel(p.reviewModel)) throw new Error('invalid reviewModel'); out.reviewModel = p.reviewModel; }
+  if ('smallModel' in p) { if (!isModel(p.smallModel)) throw new Error('invalid smallModel'); out.smallModel = p.smallModel; }
   for (const f of ['maxRetries', 'termFontSize', 'logHeight'] as const) {
     if (f in p) { if (!inRange(p[f], f)) throw new Error(`invalid ${f}`); out[f] = p[f]; }
   }

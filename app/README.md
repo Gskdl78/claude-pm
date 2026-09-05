@@ -20,17 +20,18 @@ plugin 目錄會以 extraResources 一起打包到 `resources/plugin`，主程�
 
 ## 設定
 
-側欄上方的 ⚙ 開設定對話框：專案根目錄（可用資料夾選擇器）、預設實作模型 / 審核模型、審核退回上限、終端機字型大小、資訊框預設高度、Claude Code 等待輸入時是否閃爍並通知。儲存即生效並寫進 `%USERPROFILE%\.claude-pm\config.json`：
+側欄上方的 ⚙ 開設定對話框：專案根目錄（可用資料夾選擇器）、預設實作模型 / 小任務模型 / 審核模型、審核退回上限、終端機字型大小、資訊框預設高度、Claude Code 等待輸入時是否閃爍並通知。儲存即生效並寫進 `%USERPROFILE%\.claude-pm\config.json`：
 
 ```json
 {
   "root": "C:\\Projects", "lastProject": "C:\\Projects\\my-app", "recent": [],
-  "implModel": "opus", "reviewModel": "fable", "maxRetries": 3,
+  "implModel": "opus", "reviewModel": "fable", "smallModel": "sonnet", "maxRetries": 3,
   "termFontSize": 14, "logHeight": 160, "notifyOnIdle": true
 }
 ```
 
 - 模型與退回上限只影響之後「+ 新專案」或「初始化」產生的 CLAUDE.md（模型政策節），既有專案不動。
+- 小任務模型是降級檔位：`/stage-build` 只在任務「模組」只有一個、「驗收」條目 ≤ 3 且不含重構 / 認證 / 權限 / 加密 / 遷移關鍵字時才用它，其餘仍用實作模型；審核一律用審核模型。
 - 改根目錄會關閉目前專案（結束 Claude Code session）並重新載入清單。
 - 資訊框高度：手動拖過的高度存在瀏覽器 localStorage，優先於設定的預設值。
 

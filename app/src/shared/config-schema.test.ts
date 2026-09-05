@@ -11,11 +11,11 @@ describe('normalizeConfig', () => {
   it('keeps valid values and falls back per field on bad ones', () => {
     const out = normalizeConfig({
       root: 'D:\\W', lastProject: 'D:\\W\\a', recent: ['D:\\W\\a', 3],
-      implModel: 'fable', reviewModel: 'gpt', maxRetries: 11, termFontSize: 12, logHeight: '200', notifyOnIdle: false,
+      implModel: 'fable', reviewModel: 'gpt', smallModel: 'opus', maxRetries: 11, termFontSize: 12, logHeight: '200', notifyOnIdle: false,
     }, base);
     expect(out).toEqual({
       root: 'D:\\W', lastProject: 'D:\\W\\a', recent: ['D:\\W\\a'],
-      implModel: 'fable', reviewModel: 'fable', maxRetries: 3, termFontSize: 12, logHeight: 160, notifyOnIdle: false,
+      implModel: 'fable', reviewModel: 'fable', smallModel: 'opus', maxRetries: 3, termFontSize: 12, logHeight: 160, notifyOnIdle: false,
     });
   });
   it('returns base for non-objects', () => {
@@ -25,7 +25,7 @@ describe('normalizeConfig', () => {
   it('exposes the option list and limits', () => {
     expect(MODEL_OPTIONS).toEqual(['opus', 'fable', 'sonnet']);
     expect(LIMITS.maxRetries.default).toBe(3);
-    expect(DEFAULT_SETTINGS).toEqual({ implModel: 'opus', reviewModel: 'fable', maxRetries: 3, termFontSize: 14, logHeight: 160, notifyOnIdle: true });
+    expect(DEFAULT_SETTINGS).toEqual({ implModel: 'opus', reviewModel: 'fable', smallModel: 'sonnet', maxRetries: 3, termFontSize: 14, logHeight: 160, notifyOnIdle: true });
   });
 });
 
