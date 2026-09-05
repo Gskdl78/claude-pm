@@ -8,3 +8,4 @@ Thumbs.db
 app/dist/
 app/test-results/
 app/playwright-report/
+docs/superpowers/
