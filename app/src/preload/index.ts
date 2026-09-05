@@ -44,6 +44,14 @@ const api: PmApi = {
     pin: (note) => ipcRenderer.invoke('insights:pin', note),
     unpin: (cause) => ipcRenderer.invoke('insights:unpin', cause),
   },
+  skills: {
+    fetch: (source, projectPath) => ipcRenderer.invoke('skills:fetch', source, projectPath),
+    list: (path) => ipcRenderer.invoke('skills:list', path),
+    install: (cacheId, name, path, renameTo) => ipcRenderer.invoke('skills:install', cacheId, name, path, renameTo),
+    remove: (path, name, scope) => ipcRenderer.invoke('skills:remove', path, name, scope),
+    adopt: (path, name) => ipcRenderer.invoke('skills:adopt', path, name),
+    promote: (path, name) => ipcRenderer.invoke('skills:promote', path, name),
+  },
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pty: {
     start: (path, opts) => ipcRenderer.invoke('pty:start', path, opts),
