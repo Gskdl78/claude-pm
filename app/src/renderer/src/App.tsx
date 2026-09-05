@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppConfig, GitCommit, Notice, ProjectInfo, StageName } from '../../shared/types';
+import type { AppConfig, GitCommit, Notice, ProjectInfo, SkillFetchResult, SkillInstall, StageName } from '../../shared/types';
 import { STAGE_LABELS } from '../../shared/types';
 import { pm } from './api';
 import { ProjectList } from './components/ProjectList';
@@ -13,6 +13,8 @@ import { SessionLimitDialog } from './components/SessionLimitDialog';
 import { isDocRelPath } from '../../shared/docs-path';
 import { errorMessage } from './errors';
 import { explainGitError } from '../../shared/git-errors';
+import { explainSkillError } from '../../shared/skill-errors';
+import type { SkillAction } from './components/skills/SkillsView';
 import { ClaudeMissing } from './components/ClaudeMissing';
 import { SettingsDialog, type SettingsSubmit } from './components/SettingsDialog';
 
@@ -35,6 +37,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [current, setCurrent] = useState<ProjectInfo | null>(null);
+  const [skillInstalls, setSkillInstalls] = useState<SkillInstall[]>([]);
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [gitRevision, setGitRevision] = useState(0);
   // 每個專案一個 session；切換專案只是換顯示，不再殺掉前一個。
@@ -84,6 +87,17 @@ export default function App() {
     // 寫入的值相同，因此不會漏掉或重複提示。
     lastStageRef.current = p.state ? { path: p.path, stage: p.state.stage } : null;
   }, []);
+
+  // 換專案就重讀該專案的 skill 清單（狀態是從檔案系統推導的，沒有快取可沿用）
+  useEffect(() => {
+    const path = current?.path ?? null;
+    if (!path) { setSkillInstalls([]); return undefined; }
+    let alive = true;
+    void pm.skills.list(path)
+      .then((s) => { if (alive) setSkillInstalls(s); })
+      .catch(() => { if (alive) setSkillInstalls([]); });
+    return () => { alive = false; };
+  }, [current?.path]);
 
   // sessionsRef 必須跟著 state 一起換，否則同一輪連續進來的事件會看到舊的 map。
   const updateSession = useCallback((path: string, next: SessionState | null | ((prev: SessionState | undefined) => SessionState | null)) => {
@@ -387,6 +401,57 @@ export default function App() {
     window.setTimeout(() => { pm.pty.write(path, '\r'); }, ENTER_DELAY_MS);
   };
 
+  // Skills：安裝與移除都只動檔案，要重啟該專案的 session 才會被 Claude Code 讀到。
+  const skillError = (e: unknown) => {
+    const raw = e instanceof Error ? e.message : String(e);
+    pushNotice(explainSkillError(raw) ?? raw, 'error');
+  };
+
+  const handleSkillFetch = async (source: string): Promise<SkillFetchResult | null> => {
+    try {
+      return await pm.skills.fetch(source, current?.path ?? null);
+    } catch (e) {
+      skillError(e);
+      return null;
+    }
+  };
+
+  const handleSkillInstall = async (cacheId: string, name: string, renameTo: string | null) => {
+    if (!current) return;
+    try {
+      setSkillInstalls(await pm.skills.install(cacheId, name, current.path, renameTo));
+      pushNotice(`已安裝 ${name}；要重啟這個專案的 Claude Code session 才會生效。`, 'hint');
+    } catch (e) { skillError(e); }
+  };
+
+  const handleSkillAction = async (name: string, action: SkillAction) => {
+    if (!current) return;
+    try {
+      if (action === 'adopt') {
+        const r = await pm.skills.adopt(current.path, name);
+        setSkillInstalls(r.installs);
+        pushNotice(r.result?.ok ? `已採用 ${name}` : (r.result?.stderr || `採用 ${name} 失敗`), r.result?.ok ? 'hint' : 'error');
+        return;
+      }
+      if (action === 'promote') {
+        const r = await pm.skills.promote(current.path, name);
+        setSkillInstalls(r.installs);
+        pushNotice(`${name} 已改為全域，之後每個專案都吃得到。`, 'hint');
+        return;
+      }
+      setSkillInstalls(await pm.skills.remove(current.path, name, action === 'remove-global' ? 'global' : 'project'));
+      pushNotice(`已移除 ${name}；要重啟 session 才會生效。`, 'hint');
+    } catch (e) { skillError(e); }
+  };
+
+  // 與階段按鈕同樣的規矩：指令與 Enter 分兩次寫，否則整段會被當成貼上而不送出。
+  const handleSkillAnalyze = (prompt: string) => {
+    const path = current?.path;
+    if (!path || ptyStatus !== 'running' || !ptyIdle) return;
+    pm.pty.write(path, prompt);
+    window.setTimeout(() => { pm.pty.write(path, '\r'); }, ENTER_DELAY_MS);
+  };
+
   // 上限對話框：關掉選中的 session（不另外提示），再把等著的專案開起來。
   const handleLimitClose = async (path: string) => {
     setLimitBusy(true);
@@ -413,7 +478,7 @@ export default function App() {
         <ProjectList projects={projects} currentPath={current?.path ?? null}
           livePaths={livePaths} waitingPaths={waitingPaths}
           onSelect={openProject} onInit={handleInit} onNew={() => { setDialogError(null); setDialogOpen(true); }}
-          onInsights={() => setCenterTab('insights')} onCloseSession={setCloseReq} />
+          onInsights={() => setCenterTab('insights')} onSkills={() => setCenterTab('skills')} onCloseSession={setCloseReq} />
       </aside>
       <header className="stage">
         {error && <div className="error">{error}</div>}
@@ -427,7 +492,17 @@ export default function App() {
         stageDocs={current?.state && current.state.stage !== 'done' ? current.state.stages[current.state.stage].docs ?? [] : []}
         selectedDoc={selectedDoc} onSelectDoc={setSelectedDoc} docsRevision={docsRevision} onNotice={pushNotice}
         fontSize={config?.termFontSize ?? 14} focusSeq={focusSeq}
-        insightsRevision={insightsRevision} onRevealCommit={(p, h) => { void handleRevealCommit(p, h); }} />
+        insightsRevision={insightsRevision} onRevealCommit={(p, h) => { void handleRevealCommit(p, h); }}
+        skills={{
+          projectPath: current?.path ?? null,
+          installs: skillInstalls,
+          busy: false,
+          canAnalyze: ptyStatus === 'running' && ptyIdle,
+          onFetch: handleSkillFetch,
+          onInstall: (id, name, rename) => { void handleSkillInstall(id, name, rename); },
+          onAction: (name, action) => { void handleSkillAction(name, action); },
+          onAnalyze: handleSkillAnalyze,
+        }} />
       <aside className="git">
         <GitPanel path={current?.path ?? null} commits={commits} revision={gitRevision} notices={notices} defaultLogHeight={config?.logHeight}
           revealCommit={revealCommit} stage={current?.state?.stage ?? null} />

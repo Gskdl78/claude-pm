@@ -12,6 +12,7 @@ interface Props {
   onNew: () => void;
   /** 打開跨專案洞察分頁 */
   onInsights: () => void;
+  onSkills: () => void;
   /** 關掉這個專案的 session（不切換專案） */
   onCloseSession: (p: ProjectInfo) => void;
 }
@@ -26,7 +27,7 @@ function stagePill(p: ProjectInfo) {
   return <span className={`pill ${s.stages[s.stage].status}`}>{`● ${STAGE_LABELS[s.stage]}`}</span>;
 }
 
-export function ProjectList({ projects, currentPath, livePaths, waitingPaths, onSelect, onInit, onNew, onInsights, onCloseSession }: Props) {
+export function ProjectList({ projects, currentPath, livePaths, waitingPaths, onSelect, onInit, onNew, onInsights, onSkills, onCloseSession }: Props) {
   return (
     <div className="projects">
       <button className="new-project" onClick={onNew}>+ 新專案</button>
@@ -56,6 +57,7 @@ export function ProjectList({ projects, currentPath, livePaths, waitingPaths, on
         </div>
       ))}
       <button className="insights-entry" onClick={onInsights}>📊 洞察</button>
+      <button className="insights-entry" onClick={onSkills}>🧩 Skills</button>
     </div>
   );
 }

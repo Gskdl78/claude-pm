@@ -12,13 +12,18 @@ vi.mock('./docs/DocsTab', () => ({
 vi.mock('./insights/InsightsView', () => ({
   InsightsView: ({ hidden }: { hidden: boolean }) => <div data-testid="insights" hidden={hidden}>ins</div>,
 }));
+vi.mock('./skills/SkillsView', () => ({
+  SkillsView: ({ hidden }: { hidden: boolean }) => <div data-testid="skills" hidden={hidden}>skills</div>,
+}));
 
 import { CenterPane, type CenterTab } from './CenterPane';
 
 const el = (tab: CenterTab, onTab: (t: CenterTab) => void) => (
   <CenterPane tab={tab} onTab={onTab} sessions={{}} currentPath={'C:\\P\\a'} onRestart={() => {}}
     path={'C:\\P\\a'} stageDocs={[]} selectedDoc="docs/product/prd.md" onSelectDoc={() => {}} docsRevision={0} onNotice={() => {}}
-    insightsRevision={0} onRevealCommit={() => {}} />
+    insightsRevision={0} onRevealCommit={() => {}}
+    skills={{ projectPath: null, installs: [], busy: false, canAnalyze: false,
+      onFetch: async () => null, onInstall: () => {}, onAction: () => {}, onAnalyze: () => {} }} />
 );
 
 function pane(tab: CenterTab, onTab = vi.fn()) {
